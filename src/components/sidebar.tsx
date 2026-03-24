@@ -9,10 +9,10 @@ import {
   Users,
   Settings,
   TrendingUp,
-  Crown,
   ChevronLeft,
   ChevronRight,
 } from "lucide-react";
+import Image from "next/image";
 import { useState } from "react";
 
 const navItems = [
@@ -34,14 +34,17 @@ export function Sidebar() {
         collapsed ? "w-[72px]" : "w-[260px]"
       )}
     >
-      <div className="flex items-center gap-3 px-5 h-16 border-b border-border shrink-0">
-        <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-accent to-accent-dark flex items-center justify-center shrink-0">
-          <Crown className="w-5 h-5 text-white" />
-        </div>
+      <div className="flex items-center gap-3 px-4 h-16 border-b border-border shrink-0">
+        <Image
+          src="/logo.png"
+          alt="Majest"
+          width={36}
+          height={36}
+          className="rounded-full shrink-0"
+        />
         {!collapsed && (
           <div className="animate-fade-in">
             <h1 className="text-base font-bold tracking-tight">MajestGPT</h1>
-            <p className="text-[11px] text-muted-foreground leading-none">CRM Agency</p>
           </div>
         )}
       </div>
