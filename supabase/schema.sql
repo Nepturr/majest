@@ -33,30 +33,12 @@ as $$
 $$;
 
 -- 4. RLS POLICIES
--- Users can read their own profile
+-- Browser client: users can only read their own profile (simple, no recursion)
+-- All admin operations (list users, update, delete) go through API routes
+-- using the service_role key which bypasses RLS entirely.
 create policy "Users can view own profile"
   on public.profiles for select
   using (id = auth.uid());
-
--- Admins can read all profiles
-create policy "Admins can view all profiles"
-  on public.profiles for select
-  using (public.is_admin());
-
--- Admins can insert profiles (via service role, but policy for safety)
-create policy "Admins can insert profiles"
-  on public.profiles for insert
-  with check (public.is_admin());
-
--- Admins can update all profiles
-create policy "Admins can update all profiles"
-  on public.profiles for update
-  using (public.is_admin());
-
--- Admins can delete profiles
-create policy "Admins can delete profiles"
-  on public.profiles for delete
-  using (public.is_admin());
 
 -- 5. UPDATED_AT TRIGGER
 create or replace function public.handle_updated_at()
