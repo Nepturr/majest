@@ -1,5 +1,9 @@
 # MajestGPT — Context & Vision
 
+## Règles de travail
+
+Après chaque modification de code, **push systématiquement sur `main`**, sauf si une action manuelle est requise de la part de l'utilisateur avant (ex: exécuter du SQL dans Supabase, configurer une variable d'environnement, etc.). Dans ce cas, indiquer clairement ce qui est à faire avant de pusher.
+
 ## Vision
 
 MajestGPT est le CRM interne de l'agence OnlyFans **Majest**. Son objectif principal est de **maximiser la performance marketing** des modèles gérés par l'agence, en commençant par **Instagram** (analyse de Reels).
