@@ -41,17 +41,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Stable ref — never recreated between renders
   const supabaseRef = useRef(createClient());
 
   const fetchProfile = useCallback(async (userId: string) => {
-    const { data } = await supabaseRef.current
-      .from("profiles")
-      .select("*")
-      .eq("id", userId)
-      .single();
-    setProfile(data ?? null);
-  }, []); // no deps — supabase is stable via ref
+    try {
+      const { data } = await supabaseRef.current
+        .from("profiles")
+        .select("*")
+        .eq("id", userId)
+        .single();
+      setProfile(data ?? null);
+    } catch {
+      // profiles table may not exist yet or RLS error — not fatal
+      setProfile(null);
+    }
+  }, []);
 
   const refreshProfile = useCallback(async () => {
     if (user) await fetchProfile(user.id);
@@ -60,20 +64,36 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const supabase = supabaseRef.current;
 
+    // Safety timeout: if Supabase never responds in 6s, unblock the UI
+    const timeout = setTimeout(() => {
+      setLoading(false);
+    }, 6000);
+
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      setUser(session?.user ?? null);
-      if (session?.user) {
-        await fetchProfile(session.user.id);
-      } else {
+      clearTimeout(timeout);
+
+      try {
+        setUser(session?.user ?? null);
+        if (session?.user) {
+          await fetchProfile(session.user.id);
+        } else {
+          setProfile(null);
+        }
+      } catch {
         setProfile(null);
+      } finally {
+        // ALWAYS unblock, no matter what happened above
+        setLoading(false);
       }
-      setLoading(false);
     });
 
-    return () => subscription.unsubscribe();
-  }, []); // runs once on mount only
+    return () => {
+      clearTimeout(timeout);
+      subscription.unsubscribe();
+    };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const signOut = async () => {
     await supabaseRef.current.auth.signOut();
