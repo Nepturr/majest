@@ -1,11 +1,12 @@
 "use client";
 
 import { Header } from "@/components/header";
+import { ProtectedPage } from "@/components/protected-page";
 import { Database, Globe, Key, Bell } from "lucide-react";
 
 export default function SettingsPage() {
   return (
-    <>
+    <ProtectedPage pageId="settings">
       <Header title="Settings" subtitle="MajestGPT configuration" />
 
       <div className="p-6 space-y-6 max-w-2xl">
@@ -25,41 +26,31 @@ export default function SettingsPage() {
 
         <SettingSection icon={Bell} title="Notifications" description="Alerts and reminders">
           <div className="space-y-3">
-            <label className="flex items-center justify-between cursor-pointer">
-              <span className="text-sm">New Reel analyzed</span>
-              <input type="checkbox" defaultChecked className="w-4 h-4 rounded accent-accent" />
-            </label>
-            <label className="flex items-center justify-between cursor-pointer">
-              <span className="text-sm">Score drop alert</span>
-              <input type="checkbox" defaultChecked className="w-4 h-4 rounded accent-accent" />
-            </label>
-            <label className="flex items-center justify-between cursor-pointer">
-              <span className="text-sm">Weekly report</span>
-              <input type="checkbox" className="w-4 h-4 rounded accent-accent" />
-            </label>
+            {["New Reel analyzed", "Score drop alert", "Weekly report"].map((label, i) => (
+              <label key={label} className="flex items-center justify-between cursor-pointer">
+                <span className="text-sm">{label}</span>
+                <input type="checkbox" defaultChecked={i < 2} className="w-4 h-4 rounded accent-accent" />
+              </label>
+            ))}
           </div>
         </SettingSection>
 
         <SettingSection icon={Key} title="Team" description="Access management">
           <p className="text-sm text-muted-foreground">
-            Team member management will be available in a future update.
+            Manage team members from the{" "}
+            <a href="/admin/users" className="text-accent hover:underline">
+              User Management
+            </a>{" "}
+            panel (admin only).
           </p>
         </SettingSection>
       </div>
-    </>
+    </ProtectedPage>
   );
 }
 
-function SettingSection({
-  icon: Icon,
-  title,
-  description,
-  children,
-}: {
-  icon: React.ElementType;
-  title: string;
-  description: string;
-  children: React.ReactNode;
+function SettingSection({ icon: Icon, title, description, children }: {
+  icon: React.ElementType; title: string; description: string; children: React.ReactNode;
 }) {
   return (
     <div className="bg-card border border-border rounded-xl p-5 animate-fade-in">
@@ -77,14 +68,8 @@ function SettingSection({
   );
 }
 
-function SettingField({
-  label,
-  placeholder,
-  type = "text",
-}: {
-  label: string;
-  placeholder: string;
-  type?: string;
+function SettingField({ label, placeholder, type = "text" }: {
+  label: string; placeholder: string; type?: string;
 }) {
   return (
     <div>
@@ -92,7 +77,7 @@ function SettingField({
       <input
         type={type}
         placeholder={placeholder}
-        className="w-full h-10 px-3 bg-background border border-border rounded-lg text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent/50 transition-all"
+        className="w-full h-10 px-3 bg-background border border-border rounded-lg text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent/50 transition-all"
       />
     </div>
   );

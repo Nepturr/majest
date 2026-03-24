@@ -1,6 +1,7 @@
 "use client";
 
 import { Header } from "@/components/header";
+import { ProtectedPage } from "@/components/protected-page";
 import { Film, Star } from "lucide-react";
 
 const models = [
@@ -11,7 +12,7 @@ const models = [
 
 export default function ModelsPage() {
   return (
-    <>
+    <ProtectedPage pageId="models">
       <Header title="Models" subtitle="Account management and performance" />
 
       <div className="p-6 space-y-4">
@@ -57,6 +58,6 @@ export default function ModelsPage() {
           </div>
         ))}
       </div>
-    </>
+    </ProtectedPage>
   );
 }

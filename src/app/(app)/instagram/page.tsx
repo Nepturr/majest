@@ -5,6 +5,7 @@ import { Header } from "@/components/header";
 import { ReelCard } from "@/components/reel-card";
 import { ReelDetail } from "@/components/reel-detail";
 import { AddReelModal } from "@/components/add-reel-modal";
+import { ProtectedPage } from "@/components/protected-page";
 import { mockReels } from "@/lib/mock-data";
 import { Filter, SlidersHorizontal } from "lucide-react";
 import type { ReelAnalysis } from "@/types";
@@ -15,9 +16,8 @@ export default function InstagramPage() {
   const [reels, setReels] = useState(mockReels);
   const [filter, setFilter] = useState<string>("all");
 
-  const filteredReels = filter === "all"
-    ? reels
-    : reels.filter((r) => r.hook.type === filter);
+  const filteredReels =
+    filter === "all" ? reels : reels.filter((r) => r.hook.type === filter);
 
   const handleAddReel = (url: string, accountName: string) => {
     const newReel: ReelAnalysis = {
@@ -26,12 +26,7 @@ export default function InstagramPage() {
       account_name: accountName.replace("@", ""),
       analyzed_at: new Date().toISOString(),
       duration_seconds: 12,
-      hook: {
-        text: "New reel pending analysis...",
-        duration_seconds: 2,
-        type: "visual",
-        score: 70,
-      },
+      hook: { text: "New reel pending analysis...", duration_seconds: 2, type: "visual", score: 70 },
       structure: {
         segments: [
           { label: "Hook", start_seconds: 0, end_seconds: 2, description: "Auto-detected" },
@@ -53,7 +48,7 @@ export default function InstagramPage() {
   };
 
   return (
-    <>
+    <ProtectedPage pageId="instagram">
       <Header
         title="Instagram Reels"
         subtitle="Analyze the exact composition of each Reel"
@@ -61,7 +56,6 @@ export default function InstagramPage() {
       />
 
       <div className="p-6 space-y-6">
-        {/* Filters */}
         <div className="flex items-center gap-3 flex-wrap">
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <Filter className="w-4 h-4" />
@@ -82,31 +76,28 @@ export default function InstagramPage() {
           ))}
         </div>
 
-        {/* Summary bar */}
         <div className="flex items-center gap-6 bg-card border border-border rounded-xl px-5 py-3">
           <div className="flex items-center gap-2">
             <SlidersHorizontal className="w-4 h-4 text-accent" />
-            <span className="text-sm font-medium">{filteredReels.length} reel{filteredReels.length > 1 ? "s" : ""}</span>
+            <span className="text-sm font-medium">
+              {filteredReels.length} reel{filteredReels.length > 1 ? "s" : ""}
+            </span>
           </div>
           <div className="h-4 w-px bg-border" />
           <span className="text-sm text-muted-foreground">
-            Avg. score: <strong className="text-foreground">
+            Avg. score:{" "}
+            <strong className="text-foreground">
               {filteredReels.length > 0
                 ? Math.round(filteredReels.reduce((a, r) => a + r.overall_score, 0) / filteredReels.length)
                 : 0}
-            </strong>/100
+            </strong>
+            /100
           </span>
         </div>
 
-        {/* Reel grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {filteredReels.map((reel, i) => (
-            <ReelCard
-              key={reel.id}
-              reel={reel}
-              onClick={setSelectedReel}
-              delay={i * 60}
-            />
+            <ReelCard key={reel.id} reel={reel} onClick={setSelectedReel} delay={i * 60} />
           ))}
         </div>
 
@@ -120,13 +111,9 @@ export default function InstagramPage() {
       {selectedReel && (
         <ReelDetail reel={selectedReel} onClose={() => setSelectedReel(null)} />
       )}
-
       {showAddModal && (
-        <AddReelModal
-          onClose={() => setShowAddModal(false)}
-          onSubmit={handleAddReel}
-        />
+        <AddReelModal onClose={() => setShowAddModal(false)} onSubmit={handleAddReel} />
       )}
-    </>
+    </ProtectedPage>
   );
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import { Header } from "@/components/header";
+import { ProtectedPage } from "@/components/protected-page";
 import { TrendingUp, ArrowUpRight, ArrowDownRight, Minus } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -15,7 +16,7 @@ const metrics = [
 
 export default function PerformancePage() {
   return (
-    <>
+    <ProtectedPage pageId="performance">
       <Header title="Performance" subtitle="Marketing metrics and trends" />
 
       <div className="p-6 space-y-6">
@@ -67,6 +68,6 @@ export default function PerformancePage() {
           </ul>
         </div>
       </div>
-    </>
+    </ProtectedPage>
   );
 }
