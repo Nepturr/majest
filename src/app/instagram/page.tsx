@@ -27,16 +27,16 @@ export default function InstagramPage() {
       analyzed_at: new Date().toISOString(),
       duration_seconds: 12,
       hook: {
-        text: "Nouveau reel en cours d'analyse...",
+        text: "New reel pending analysis...",
         duration_seconds: 2,
         type: "visual",
         score: 70,
       },
       structure: {
         segments: [
-          { label: "Hook", start_seconds: 0, end_seconds: 2, description: "Analyse automatique" },
-          { label: "Content", start_seconds: 2, end_seconds: 10, description: "Contenu principal" },
-          { label: "CTA", start_seconds: 10, end_seconds: 12, description: "Fin de vidéo" },
+          { label: "Hook", start_seconds: 0, end_seconds: 2, description: "Auto-detected" },
+          { label: "Content", start_seconds: 2, end_seconds: 10, description: "Main content" },
+          { label: "CTA", start_seconds: 10, end_seconds: 12, description: "End of video" },
         ],
         pacing: "medium",
         transitions: ["cut"],
@@ -46,7 +46,7 @@ export default function InstagramPage() {
       cta: { present: false },
       overall_score: 65,
       tags: ["new", "pending-review"],
-      notes: "Analyse générée automatiquement — à compléter manuellement.",
+      notes: "Auto-generated analysis — complete manually.",
     };
     setReels([newReel, ...reels]);
     setShowAddModal(false);
@@ -56,16 +56,16 @@ export default function InstagramPage() {
     <>
       <Header
         title="Instagram Reels"
-        subtitle="Analysez la composition exacte de chaque Reel"
-        action={{ label: "Analyser un Reel", onClick: () => setShowAddModal(true) }}
+        subtitle="Analyze the exact composition of each Reel"
+        action={{ label: "Analyze a Reel", onClick: () => setShowAddModal(true) }}
       />
 
       <div className="p-6 space-y-6">
         {/* Filters */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <Filter className="w-4 h-4" />
-            <span>Filtrer par hook :</span>
+            <span>Filter by hook:</span>
           </div>
           {["all", "question", "visual", "shock", "statement", "trend"].map((f) => (
             <button
@@ -77,7 +77,7 @@ export default function InstagramPage() {
                   : "bg-card border-border text-muted hover:text-foreground hover:border-border-light"
               }`}
             >
-              {f === "all" ? "Tous" : f.charAt(0).toUpperCase() + f.slice(1)}
+              {f === "all" ? "All" : f.charAt(0).toUpperCase() + f.slice(1)}
             </button>
           ))}
         </div>
@@ -90,7 +90,7 @@ export default function InstagramPage() {
           </div>
           <div className="h-4 w-px bg-border" />
           <span className="text-sm text-muted-foreground">
-            Score moyen : <strong className="text-foreground">
+            Avg. score: <strong className="text-foreground">
               {filteredReels.length > 0
                 ? Math.round(filteredReels.reduce((a, r) => a + r.overall_score, 0) / filteredReels.length)
                 : 0}
@@ -112,7 +112,7 @@ export default function InstagramPage() {
 
         {filteredReels.length === 0 && (
           <div className="text-center py-16">
-            <p className="text-muted-foreground text-sm">Aucun reel trouvé avec ce filtre.</p>
+            <p className="text-muted-foreground text-sm">No reels found with this filter.</p>
           </div>
         )}
       </div>

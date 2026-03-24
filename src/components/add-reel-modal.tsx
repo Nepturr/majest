@@ -28,7 +28,7 @@ export function AddReelModal({ onClose, onSubmit }: AddReelModalProps) {
 
       <div className="relative bg-background border border-border rounded-2xl w-full max-w-md p-6 animate-fade-in">
         <div className="flex items-center justify-between mb-6">
-          <h3 className="text-lg font-semibold">Analyser un Reel</h3>
+          <h3 className="text-lg font-semibold">Analyze a Reel</h3>
           <button
             onClick={onClose}
             className="w-8 h-8 rounded-lg hover:bg-card flex items-center justify-center transition-colors"
@@ -39,7 +39,7 @@ export function AddReelModal({ onClose, onSubmit }: AddReelModalProps) {
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium mb-2">URL du Reel Instagram</label>
+            <label className="block text-sm font-medium mb-2">Instagram Reel URL</label>
             <div className="relative">
               <Link2 className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <input
@@ -54,7 +54,7 @@ export function AddReelModal({ onClose, onSubmit }: AddReelModalProps) {
           </div>
 
           <div>
-            <label className="block text-sm font-medium mb-2">Nom du compte</label>
+            <label className="block text-sm font-medium mb-2">Account name</label>
             <input
               type="text"
               value={accountName}
@@ -73,16 +73,16 @@ export function AddReelModal({ onClose, onSubmit }: AddReelModalProps) {
             {loading ? (
               <>
                 <Loader2 className="w-4 h-4 animate-spin" />
-                Analyse en cours...
+                Analyzing...
               </>
             ) : (
-              "Lancer l'analyse"
+              "Start Analysis"
             )}
           </button>
         </form>
 
         <p className="text-xs text-muted-foreground text-center mt-4">
-          L&apos;analyse décompose le hook, la structure, l&apos;audio, les textes et le CTA du Reel.
+          The analysis breaks down the hook, structure, audio, text overlays and CTA of the Reel.
         </p>
       </div>
     </div>

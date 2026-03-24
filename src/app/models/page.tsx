@@ -1,7 +1,7 @@
 "use client";
 
 import { Header } from "@/components/header";
-import { Users, Film, TrendingUp, Star } from "lucide-react";
+import { Film, Star } from "lucide-react";
 
 const models = [
   { name: "Luna", handle: "@model_luna", reels: 28, avgScore: 79, status: "active" },
@@ -12,7 +12,7 @@ const models = [
 export default function ModelsPage() {
   return (
     <>
-      <Header title="Modèles" subtitle="Gestion des comptes et performances" />
+      <Header title="Models" subtitle="Account management and performance" />
 
       <div className="p-6 space-y-4">
         {models.map((model, i) => (
@@ -40,7 +40,7 @@ export default function ModelsPage() {
                 </p>
               </div>
               <div className="text-center">
-                <p className="text-xs text-muted-foreground">Score moyen</p>
+                <p className="text-xs text-muted-foreground">Avg. score</p>
                 <p className="text-lg font-bold flex items-center gap-1">
                   <Star className="w-4 h-4 text-warning" />
                   {model.avgScore}
@@ -51,7 +51,7 @@ export default function ModelsPage() {
                   ? "bg-success/10 text-success border-success/20"
                   : "bg-warning/10 text-warning border-warning/20"
               }`}>
-                {model.status === "active" ? "Actif" : "Onboarding"}
+                {model.status === "active" ? "Active" : "Onboarding"}
               </span>
             </div>
           </div>

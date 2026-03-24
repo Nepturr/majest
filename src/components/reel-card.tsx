@@ -4,21 +4,12 @@ import { cn, scoreColor, scoreBg } from "@/lib/utils";
 import type { ReelAnalysis } from "@/types";
 import { Clock, Music, Type, MousePointerClick, Tag, ChevronRight } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
-import { fr } from "date-fns/locale";
 
 interface ReelCardProps {
   reel: ReelAnalysis;
   onClick: (reel: ReelAnalysis) => void;
   delay?: number;
 }
-
-const hookTypeLabels: Record<string, string> = {
-  question: "Question",
-  statement: "Affirmation",
-  shock: "Choc",
-  visual: "Visuel",
-  trend: "Tendance",
-};
 
 export function ReelCard({ reel, onClick, delay = 0 }: ReelCardProps) {
   return (
@@ -31,7 +22,7 @@ export function ReelCard({ reel, onClick, delay = 0 }: ReelCardProps) {
         <div>
           <p className="font-semibold text-sm">@{reel.account_name}</p>
           <p className="text-xs text-muted-foreground mt-0.5">
-            {formatDistanceToNow(new Date(reel.analyzed_at), { addSuffix: true, locale: fr })}
+            {formatDistanceToNow(new Date(reel.analyzed_at), { addSuffix: true })}
           </p>
         </div>
         <div className={cn("px-3 py-1.5 rounded-lg border text-lg font-bold", scoreBg(reel.overall_score), scoreColor(reel.overall_score))}>
@@ -48,7 +39,7 @@ export function ReelCard({ reel, onClick, delay = 0 }: ReelCardProps) {
         </div>
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
           <Music className="w-3.5 h-3.5" />
-          <span className="truncate">{reel.audio.type.replace("_", " ")}</span>
+          <span className="truncate">{reel.audio.type.replace(/_/g, " ")}</span>
         </div>
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
           <Type className="w-3.5 h-3.5" />
@@ -56,7 +47,7 @@ export function ReelCard({ reel, onClick, delay = 0 }: ReelCardProps) {
         </div>
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
           <MousePointerClick className="w-3.5 h-3.5" />
-          <span>{reel.cta.present ? reel.cta.type : "Aucun CTA"}</span>
+          <span>{reel.cta.present ? reel.cta.type : "No CTA"}</span>
         </div>
       </div>
 

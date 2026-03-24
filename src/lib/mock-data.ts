@@ -22,10 +22,10 @@ export const mockReels: ReelAnalysis[] = [
     },
     structure: {
       segments: [
-        { label: "Hook", start_seconds: 0, end_seconds: 2.5, description: "Accroche visuelle face caméra" },
-        { label: "Build-up", start_seconds: 2.5, end_seconds: 8, description: "Transition avec effet zoom" },
-        { label: "Reveal", start_seconds: 8, end_seconds: 12, description: "Montée en intensité visuelle" },
-        { label: "CTA", start_seconds: 12, end_seconds: 15, description: "Texte overlay avec appel à l'action" },
+        { label: "Hook", start_seconds: 0, end_seconds: 2.5, description: "Visual face-cam opener" },
+        { label: "Build-up", start_seconds: 2.5, end_seconds: 8, description: "Zoom transition effect" },
+        { label: "Reveal", start_seconds: 8, end_seconds: 12, description: "Visual intensity peak" },
+        { label: "CTA", start_seconds: 12, end_seconds: 15, description: "Text overlay call-to-action" },
       ],
       pacing: "fast",
       transitions: ["zoom", "cut", "fade"],
@@ -51,7 +51,7 @@ export const mockReels: ReelAnalysis[] = [
     },
     overall_score: 82,
     tags: ["pov", "transition", "trending-audio", "link-in-bio"],
-    notes: "Très bon hook visuel. Le pacing rapide maintient l'attention. CTA clair en fin de vidéo.",
+    notes: "Strong visual hook. Fast pacing keeps attention. Clear CTA at the end.",
   },
   {
     id: "2",
@@ -67,10 +67,10 @@ export const mockReels: ReelAnalysis[] = [
     },
     structure: {
       segments: [
-        { label: "Hook", start_seconds: 0, end_seconds: 3, description: "Question directe face caméra" },
-        { label: "Storytelling", start_seconds: 3, end_seconds: 15, description: "Narration avec plans variés" },
-        { label: "Climax", start_seconds: 15, end_seconds: 25, description: "Moment fort avec musique montante" },
-        { label: "CTA", start_seconds: 25, end_seconds: 30, description: "Invitation à follow" },
+        { label: "Hook", start_seconds: 0, end_seconds: 3, description: "Direct question to camera" },
+        { label: "Storytelling", start_seconds: 3, end_seconds: 15, description: "Narration with varied shots" },
+        { label: "Climax", start_seconds: 15, end_seconds: 25, description: "High point with rising music" },
+        { label: "CTA", start_seconds: 25, end_seconds: 30, description: "Follow invitation" },
       ],
       pacing: "medium",
       transitions: ["swipe", "cut"],
@@ -94,7 +94,7 @@ export const mockReels: ReelAnalysis[] = [
     },
     overall_score: 68,
     tags: ["question-hook", "storytelling", "voiceover", "follow-cta"],
-    notes: "Bon storytelling mais le hook pourrait être plus percutant. Durée 30s = risque de drop-off.",
+    notes: "Good storytelling but hook could be punchier. 30s duration risks drop-off.",
   },
   {
     id: "3",
@@ -110,9 +110,9 @@ export const mockReels: ReelAnalysis[] = [
     },
     structure: {
       segments: [
-        { label: "Hook", start_seconds: 0, end_seconds: 1.5, description: "Réaction choc immédiate" },
-        { label: "Content", start_seconds: 1.5, end_seconds: 6, description: "Contenu rapide avec cuts" },
-        { label: "End", start_seconds: 6, end_seconds: 8, description: "Fin abrupte pour replay" },
+        { label: "Hook", start_seconds: 0, end_seconds: 1.5, description: "Immediate shock reaction" },
+        { label: "Content", start_seconds: 1.5, end_seconds: 6, description: "Fast content with cuts" },
+        { label: "End", start_seconds: 6, end_seconds: 8, description: "Abrupt ending for replay" },
       ],
       pacing: "fast",
       transitions: ["jump-cut", "flash"],
@@ -133,6 +133,6 @@ export const mockReels: ReelAnalysis[] = [
     },
     overall_score: 75,
     tags: ["shock-hook", "short-form", "replay-bait", "no-cta"],
-    notes: "Excellent hook shock. Format ultra-court favorise le replay. Manque de CTA = opportunité perdue.",
+    notes: "Excellent shock hook. Ultra-short format encourages replay. Missing CTA = missed opportunity.",
   },
 ];

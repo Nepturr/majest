@@ -18,9 +18,9 @@ import { useState } from "react";
 const navItems = [
   { label: "Dashboard", href: "/", icon: LayoutDashboard },
   { label: "Instagram Reels", href: "/instagram", icon: Film },
-  { label: "Modèles", href: "/models", icon: Users },
+  { label: "Models", href: "/models", icon: Users },
   { label: "Performance", href: "/performance", icon: TrendingUp },
-  { label: "Paramètres", href: "/settings", icon: Settings },
+  { label: "Settings", href: "/settings", icon: Settings },
 ];
 
 export function Sidebar() {
@@ -74,7 +74,7 @@ export function Sidebar() {
           className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-sidebar-hover transition-colors text-sm"
         >
           {collapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
-          {!collapsed && <span>Réduire</span>}
+          {!collapsed && <span>Collapse</span>}
         </button>
       </div>
     </aside>

@@ -17,22 +17,22 @@ export default function DashboardPage() {
     <>
       <Header
         title="Dashboard"
-        subtitle="Vue d'ensemble de vos performances"
+        subtitle="Overview of your performance"
       />
 
       <div className="p-6 space-y-6">
         {/* Stats */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <StatsCard
-            label="Reels analysés"
+            label="Reels analyzed"
             value={mockStats.total_reels_analyzed}
-            change="+12 cette semaine"
+            change="+12 this week"
             changeType="up"
             icon={Film}
             delay={0}
           />
           <StatsCard
-            label="Score moyen"
+            label="Average score"
             value={`${mockStats.avg_score}/100`}
             change="+5 pts"
             changeType="up"
@@ -40,15 +40,15 @@ export default function DashboardPage() {
             delay={50}
           />
           <StatsCard
-            label="Meilleur hook"
+            label="Top hook type"
             value={mockStats.top_hook_type}
             icon={Zap}
             delay={100}
           />
           <StatsCard
-            label="Comptes suivis"
+            label="Tracked accounts"
             value={mockStats.total_accounts}
-            change="+2 ce mois"
+            change="+2 this month"
             changeType="up"
             icon={Users}
             delay={150}
@@ -58,12 +58,12 @@ export default function DashboardPage() {
         {/* Recent Reels */}
         <div>
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-base font-semibold">Analyses récentes</h3>
+            <h3 className="text-base font-semibold">Recent analyses</h3>
             <Link
               href="/instagram"
               className="text-sm text-accent hover:text-accent-light flex items-center gap-1 transition-colors"
             >
-              Voir tout
+              View all
               <ArrowRight className="w-3.5 h-3.5" />
             </Link>
           </div>
@@ -82,19 +82,19 @@ export default function DashboardPage() {
 
         {/* Quick Tips */}
         <div className="bg-gradient-to-r from-accent/5 to-accent-dark/5 border border-accent/10 rounded-xl p-5">
-          <h3 className="text-sm font-semibold mb-2 text-accent-light">Insights rapides</h3>
+          <h3 className="text-sm font-semibold mb-2 text-accent-light">Quick Insights</h3>
           <ul className="space-y-2 text-sm text-muted">
             <li className="flex items-start gap-2">
               <span className="w-1.5 h-1.5 rounded-full bg-accent mt-1.5 shrink-0" />
-              Les hooks de type <strong className="text-foreground">question</strong> ont le meilleur taux de rétention sur vos comptes.
+              <strong className="text-foreground">Question</strong> hooks have the best retention rate across your accounts.
             </li>
             <li className="flex items-start gap-2">
               <span className="w-1.5 h-1.5 rounded-full bg-accent mt-1.5 shrink-0" />
-              Les Reels de <strong className="text-foreground">8-15 secondes</strong> performent 34% mieux que les Reels longs.
+              Reels between <strong className="text-foreground">8–15 seconds</strong> perform 34% better than longer ones.
             </li>
             <li className="flex items-start gap-2">
               <span className="w-1.5 h-1.5 rounded-full bg-accent mt-1.5 shrink-0" />
-              Ajouter un CTA clair augmente le taux de conversion de <strong className="text-foreground">28%</strong>.
+              Adding a clear CTA increases conversion rate by <strong className="text-foreground">28%</strong>.
             </li>
           </ul>
         </div>

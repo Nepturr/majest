@@ -6,43 +6,43 @@ import { Database, Globe, Key, Bell } from "lucide-react";
 export default function SettingsPage() {
   return (
     <>
-      <Header title="Paramètres" subtitle="Configuration de MajestGPT" />
+      <Header title="Settings" subtitle="MajestGPT configuration" />
 
       <div className="p-6 space-y-6 max-w-2xl">
-        <SettingSection icon={Database} title="Base de données" description="Supabase">
+        <SettingSection icon={Database} title="Database" description="Supabase">
           <div className="space-y-3">
-            <SettingField label="URL Supabase" placeholder="https://xxx.supabase.co" type="url" />
+            <SettingField label="Supabase URL" placeholder="https://xxx.supabase.co" type="url" />
             <SettingField label="Anon Key" placeholder="eyJ..." type="password" />
           </div>
         </SettingSection>
 
-        <SettingSection icon={Globe} title="Instagram API" description="Connexion API">
+        <SettingSection icon={Globe} title="Instagram API" description="API connection">
           <div className="space-y-3">
             <SettingField label="Access Token" placeholder="IGQ..." type="password" />
             <SettingField label="App ID" placeholder="123456789" />
           </div>
         </SettingSection>
 
-        <SettingSection icon={Bell} title="Notifications" description="Alertes et rappels">
+        <SettingSection icon={Bell} title="Notifications" description="Alerts and reminders">
           <div className="space-y-3">
             <label className="flex items-center justify-between cursor-pointer">
-              <span className="text-sm">Nouveau Reel analysé</span>
+              <span className="text-sm">New Reel analyzed</span>
               <input type="checkbox" defaultChecked className="w-4 h-4 rounded accent-accent" />
             </label>
             <label className="flex items-center justify-between cursor-pointer">
-              <span className="text-sm">Score en baisse</span>
+              <span className="text-sm">Score drop alert</span>
               <input type="checkbox" defaultChecked className="w-4 h-4 rounded accent-accent" />
             </label>
             <label className="flex items-center justify-between cursor-pointer">
-              <span className="text-sm">Rapport hebdomadaire</span>
+              <span className="text-sm">Weekly report</span>
               <input type="checkbox" className="w-4 h-4 rounded accent-accent" />
             </label>
           </div>
         </SettingSection>
 
-        <SettingSection icon={Key} title="Équipe" description="Gestion des accès">
+        <SettingSection icon={Key} title="Team" description="Access management">
           <p className="text-sm text-muted-foreground">
-            La gestion des membres de l&apos;équipe sera disponible dans une prochaine mise à jour.
+            Team member management will be available in a future update.
           </p>
         </SettingSection>
       </div>

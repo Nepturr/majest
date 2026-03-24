@@ -14,10 +14,10 @@ interface ReelDetailProps {
 
 const hookTypeLabels: Record<string, string> = {
   question: "Question",
-  statement: "Affirmation",
-  shock: "Choc",
-  visual: "Visuel",
-  trend: "Tendance",
+  statement: "Statement",
+  shock: "Shock",
+  visual: "Visual",
+  trend: "Trend",
 };
 
 export function ReelDetail({ reel, onClose }: ReelDetailProps) {
@@ -31,7 +31,7 @@ export function ReelDetail({ reel, onClose }: ReelDetailProps) {
         <div className="sticky top-0 bg-background/90 backdrop-blur-md border-b border-border px-6 py-4 flex items-center justify-between z-10">
           <div>
             <h3 className="font-semibold">@{reel.account_name}</h3>
-            <p className="text-sm text-muted-foreground">Analyse détaillée du Reel</p>
+            <p className="text-sm text-muted-foreground">Detailed Reel Analysis</p>
           </div>
           <div className="flex items-center gap-3">
             <a
@@ -52,9 +52,9 @@ export function ReelDetail({ reel, onClose }: ReelDetailProps) {
         </div>
 
         <div className="p-6 space-y-6">
-          {/* Score global */}
+          {/* Overall Score */}
           <div className={cn("rounded-xl border p-5 text-center", scoreBg(reel.overall_score))}>
-            <p className="text-sm text-muted-foreground mb-1">Score Global</p>
+            <p className="text-sm text-muted-foreground mb-1">Overall Score</p>
             <p className={cn("text-5xl font-black", scoreColor(reel.overall_score))}>
               {reel.overall_score}
             </p>
@@ -67,7 +67,7 @@ export function ReelDetail({ reel, onClose }: ReelDetailProps) {
               <p className="text-sm italic text-muted">&ldquo;{reel.hook.text}&rdquo;</p>
               <div className="grid grid-cols-3 gap-3">
                 <Stat label="Type" value={hookTypeLabels[reel.hook.type] || reel.hook.type} />
-                <Stat label="Durée" value={`${reel.hook.duration_seconds}s`} />
+                <Stat label="Duration" value={`${reel.hook.duration_seconds}s`} />
                 <Stat label="Score" value={`${reel.hook.score}/100`} valueClass={scoreColor(reel.hook.score)} />
               </div>
             </div>
@@ -135,14 +135,14 @@ export function ReelDetail({ reel, onClose }: ReelDetailProps) {
           {/* Audio */}
           <Section title="Audio" icon={Music}>
             <div className="grid grid-cols-2 gap-3">
-              <Stat label="Type" value={reel.audio.type.replace("_", " ")} />
-              <Stat label="Voiceover" value={reel.audio.has_voiceover ? "Oui" : "Non"} />
-              {reel.audio.name && <Stat label="Son" value={reel.audio.name} className="col-span-2" />}
+              <Stat label="Type" value={reel.audio.type.replace(/_/g, " ")} />
+              <Stat label="Voiceover" value={reel.audio.has_voiceover ? "Yes" : "No"} />
+              {reel.audio.name && <Stat label="Sound" value={reel.audio.name} className="col-span-2" />}
             </div>
           </Section>
 
           {/* Text Overlays */}
-          <Section title="Textes Overlay" icon={Type}>
+          <Section title="Text Overlays" icon={Type}>
             <div className="space-y-2">
               {reel.text_overlays.items.map((item, i) => (
                 <div key={i} className="flex items-start gap-3 text-sm bg-card rounded-lg p-3 border border-border">
@@ -161,17 +161,17 @@ export function ReelDetail({ reel, onClose }: ReelDetailProps) {
             {reel.cta.present ? (
               <div className="grid grid-cols-3 gap-3">
                 <Stat label="Type" value={reel.cta.type || "—"} />
-                <Stat label="Texte" value={reel.cta.text || "—"} />
-                <Stat label="Position" value={reel.cta.placement || "—"} />
+                <Stat label="Text" value={reel.cta.text || "—"} />
+                <Stat label="Placement" value={reel.cta.placement || "—"} />
               </div>
             ) : (
-              <p className="text-sm text-warning">Aucun CTA détecté — opportunité manquée</p>
+              <p className="text-sm text-warning">No CTA detected — missed opportunity</p>
             )}
           </Section>
 
           {/* Notes */}
           {reel.notes && (
-            <Section title="Notes d'analyse" icon={MessageSquare}>
+            <Section title="Analysis Notes" icon={MessageSquare}>
               <p className="text-sm text-muted leading-relaxed">{reel.notes}</p>
             </Section>
           )}
