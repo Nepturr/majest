@@ -7,7 +7,7 @@ MajestGPT est le CRM interne de l'agence OnlyFans **Majest**. Son objectif princ
 L'outil doit être :
 - **Moderne & ergonomique** : utilisé quotidiennement par de nombreux employés
 - **Data-driven** : chaque décision marketing est guidée par des métriques précises
-- **Scalable** : pensé pour accueillir de nouveaux canaux (TikTok, Twitter/X, Reddit…)
+- **Scalable** : pensé pour accueillir de nouveaux canaux (Meta ads,TikTok, Twitter/X, Reddit…)
 
 ## Stack Technique
 

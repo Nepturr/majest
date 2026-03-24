@@ -75,23 +75,19 @@ create trigger on_profile_updated
 
 
 -- ============================================================
--- BOOTSTRAP: Create your first admin account
--- 
--- Step 1: Go to Supabase Dashboard → Authentication → Users
---         → Add user → enter your email + password
+-- BOOTSTRAP: Create your first admin profile
 --
--- Step 2: Copy the user UUID from the users list
---
--- Step 3: Run this (replace with your actual values):
+-- After creating a user in Supabase Dashboard → Authentication → Users,
+-- run this query in the SQL Editor (replace the email):
 -- ============================================================
 
-/*
 insert into public.profiles (id, email, full_name, role, allowed_pages)
-values (
-  'YOUR-USER-UUID-HERE',
-  'your@email.com',
-  'Your Name',
-  'admin',
-  '{}'
-);
-*/
+select
+  id,
+  email,
+  coalesce(raw_user_meta_data->>'full_name', split_part(email, '@', 1)) as full_name,
+  'admin' as role,
+  '{}' as allowed_pages
+from auth.users
+where email = 'VOTRE_EMAIL_ICI'
+on conflict (id) do update set role = 'admin';
