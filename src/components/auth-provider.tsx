@@ -45,13 +45,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const fetchProfile = useCallback(async (userId: string) => {
     try {
-      const { data } = await supabaseRef.current
+      const { data, error } = await supabaseRef.current
         .from("profiles")
         .select("*")
         .eq("id", userId)
         .single();
+      if (error) console.warn("[auth] fetchProfile error:", error.message);
       setProfile(data ?? null);
-    } catch {
+    } catch (e) {
+      console.warn("[auth] fetchProfile threw:", e);
       setProfile(null);
     }
   }, []);
@@ -62,17 +64,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const supabase = supabaseRef.current;
-    let done = false;
 
-    const finish = () => {
-      if (!done) {
-        done = true;
-        setLoading(false);
-      }
-    };
+    // Fallback: unblock UI after 5s no matter what
+    const timeout = setTimeout(() => setLoading(false), 5000);
 
-    // ── 1. Explicit getSession() — reliable on hard reload
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
+    // onAuthStateChange handles ALL events including INITIAL_SESSION (page reload)
+    // When INITIAL_SESSION fires, the client already has the auth token loaded
+    // → safe to make authenticated DB queries right away
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(async (event, session) => {
+      clearTimeout(timeout);
       try {
         setUser(session?.user ?? null);
         if (session?.user) {
@@ -83,33 +85,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       } catch {
         setProfile(null);
       } finally {
-        finish();
+        setLoading(false);
       }
     });
-
-    // ── 2. onAuthStateChange — handles login/logout/token refresh after mount
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        // INITIAL_SESSION is already handled by getSession() above
-        if (event === "INITIAL_SESSION") return;
-
-        try {
-          setUser(session?.user ?? null);
-          if (session?.user) {
-            await fetchProfile(session.user.id);
-          } else {
-            setProfile(null);
-          }
-        } catch {
-          setProfile(null);
-        } finally {
-          finish();
-        }
-      }
-    );
-
-    // ── 3. Hard timeout — if everything above fails, unblock after 5s
-    const timeout = setTimeout(finish, 5000);
 
     return () => {
       clearTimeout(timeout);
