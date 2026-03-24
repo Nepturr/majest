@@ -63,6 +63,70 @@ create trigger on_profile_updated
 -- run this query in the SQL Editor (replace the email):
 -- ============================================================
 
+-- ============================================================
+-- MODELS TABLE
+-- Un persona AI avec une apparence physique fixe (LoRA)
+-- ============================================================
+
+create table if not exists public.models (
+  id                 uuid        default gen_random_uuid() primary key,
+  name               text        not null,
+  avatar_url         text,
+  persona            text,
+  lora_id            text,
+  lora_thumbnail_url text,
+  brand_notes        text,
+  status             text        not null default 'active' check (status in ('active', 'inactive')),
+  created_at         timestamptz not null default now(),
+  updated_at         timestamptz not null default now()
+);
+
+alter table public.models enable row level security;
+
+-- Tout utilisateur authentifié peut lire les modèles (sélecteur génération IA)
+create policy "Authenticated users can view models"
+  on public.models for select
+  using (auth.uid() is not null);
+
+-- Seul le service_role (API admin) peut écrire — RLS bypass côté serveur
+create trigger on_model_updated
+  before update on public.models
+  for each row execute procedure public.handle_updated_at();
+
+
+-- ============================================================
+-- ACCOUNTS TABLE
+-- Un compte Instagram associé à une modèle
+-- (structure préparée pour la feature "Ajouter un compte")
+-- ============================================================
+
+create table if not exists public.accounts (
+  id                    uuid        default gen_random_uuid() primary key,
+  model_id              uuid        references public.models(id) on delete cascade not null,
+  instagram_handle      text        not null,
+  niche                 text,
+  get_my_social_link_id text,
+  of_tracking_link      text,
+  status                text        not null default 'active' check (status in ('active', 'inactive')),
+  created_at            timestamptz not null default now(),
+  updated_at            timestamptz not null default now()
+);
+
+alter table public.accounts enable row level security;
+
+create policy "Authenticated users can view accounts"
+  on public.accounts for select
+  using (auth.uid() is not null);
+
+create trigger on_account_updated
+  before update on public.accounts
+  for each row execute procedure public.handle_updated_at();
+
+
+-- ============================================================
+-- BOOTSTRAP: Create your first admin profile
+-- ============================================================
+
 insert into public.profiles (id, email, full_name, role, allowed_pages)
 select
   id,

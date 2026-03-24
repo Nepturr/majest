@@ -56,3 +56,28 @@ export interface NavItem {
   icon: string;
   badge?: number;
 }
+
+export interface Model {
+  id: string;
+  name: string;
+  avatar_url: string | null;
+  persona: string | null;
+  lora_id: string | null;
+  lora_thumbnail_url: string | null;
+  brand_notes: string | null;
+  status: "active" | "inactive";
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Account {
+  id: string;
+  model_id: string;
+  instagram_handle: string;
+  niche: string | null;
+  get_my_social_link_id: string | null;
+  of_tracking_link: string | null;
+  status: "active" | "inactive";
+  created_at: string;
+  updated_at: string;
+}

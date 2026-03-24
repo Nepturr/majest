@@ -31,7 +31,30 @@ L'outil doit être :
 - Scoring de performance
 - Historique des analyses
 
+## Architecture de données
+
+### Table `models`
+Un persona AI avec une apparence physique fixe définie par un LoRA.
+Champs : `name`, `avatar_url`, `persona`, `lora_id`, `lora_thumbnail_url`, `brand_notes`, `status` (active/inactive).
+
+### Table `accounts` (préparée, feature à venir)
+Un compte Instagram associé à une modèle.
+Champs clés : `model_id` (FK), `instagram_handle`, `niche`, `get_my_social_link_id` (GetMySocial API), `of_tracking_link` (OnlyFans tracking).
+
+### Sources de données du funnel
+- **GetMySocial** : clics bio → `GET /api/v2/analytics/overview?scope=link&linkId={getMySocialLinkId}`
+- **OnlyFans API** (via onlyfansapi.com) : subscribers, revenue, tracking links
+- **Apify** : scraping Instagram Insights pour les stats de reels
+
 ## Historique des Mises à Jour
+
+### v0.2.0 — 25 Mars 2026
+- Panel Admin : nouvel onglet "Models" (liste, ajout, édition, suppression)
+- Formulaire "Ajouter une modèle" : nom, avatar URL, persona, LoRA ID, LoRA thumbnail, brand notes, statut
+- Routes API CRUD `/api/admin/models` et `/api/admin/models/[id]`
+- Schéma Supabase : tables `models` + `accounts` (avec RLS)
+- Types TypeScript : `Model`, `Account`
+- Page `/models` connectée aux vraies données Supabase
 
 ### v0.1.0 — 24 Mars 2026
 - Initialisation du projet (Next.js 16 + Tailwind + Supabase)
