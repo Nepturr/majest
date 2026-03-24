@@ -52,7 +52,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         .single();
       setProfile(data ?? null);
     } catch {
-      // profiles table may not exist yet or RLS error — not fatal
       setProfile(null);
     }
   }, []);
@@ -63,17 +62,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const supabase = supabaseRef.current;
+    let done = false;
 
-    // Safety timeout: if Supabase never responds in 6s, unblock the UI
-    const timeout = setTimeout(() => {
-      setLoading(false);
-    }, 6000);
+    const finish = () => {
+      if (!done) {
+        done = true;
+        setLoading(false);
+      }
+    };
 
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      clearTimeout(timeout);
-
+    // ── 1. Explicit getSession() — reliable on hard reload
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
       try {
         setUser(session?.user ?? null);
         if (session?.user) {
@@ -84,10 +83,33 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       } catch {
         setProfile(null);
       } finally {
-        // ALWAYS unblock, no matter what happened above
-        setLoading(false);
+        finish();
       }
     });
+
+    // ── 2. onAuthStateChange — handles login/logout/token refresh after mount
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        // INITIAL_SESSION is already handled by getSession() above
+        if (event === "INITIAL_SESSION") return;
+
+        try {
+          setUser(session?.user ?? null);
+          if (session?.user) {
+            await fetchProfile(session.user.id);
+          } else {
+            setProfile(null);
+          }
+        } catch {
+          setProfile(null);
+        } finally {
+          finish();
+        }
+      }
+    );
+
+    // ── 3. Hard timeout — if everything above fails, unblock after 5s
+    const timeout = setTimeout(finish, 5000);
 
     return () => {
       clearTimeout(timeout);
@@ -101,9 +123,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider
-      value={{ user, profile, loading, signOut, refreshProfile }}
-    >
+    <AuthContext.Provider value={{ user, profile, loading, signOut, refreshProfile }}>
       {children}
     </AuthContext.Provider>
   );
