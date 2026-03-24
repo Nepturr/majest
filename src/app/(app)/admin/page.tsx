@@ -545,7 +545,7 @@ function ModelFormModal({ model, onClose, onSuccess }: ModelFormModalProps) {
           <textarea
             value={persona}
             onChange={(e) => setPersona(e.target.value)}
-            placeholder="e.g. Asian, 23 years old, 5'4", almond eyes, long black hair…"
+            placeholder="e.g. Asian, 23 years old, 5ft4, almond eyes, long black hair…"
             rows={3}
             className={cn(inputCls, "h-auto resize-none py-3")}
           />
