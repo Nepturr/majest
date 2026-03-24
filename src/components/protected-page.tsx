@@ -2,7 +2,6 @@
 
 import { useAuth } from "@/components/auth-provider";
 import { ShieldX, Loader2, UserX } from "lucide-react";
-import Link from "next/link";
 
 interface ProtectedPageProps {
   pageId: string;
@@ -10,7 +9,7 @@ interface ProtectedPageProps {
 }
 
 export function ProtectedPage({ pageId, children }: ProtectedPageProps) {
-  const { profile, loading } = useAuth();
+  const { profile, loading, signOut } = useAuth();
 
   if (loading) {
     return (
@@ -36,12 +35,12 @@ export function ProtectedPage({ pageId, children }: ProtectedPageProps) {
           </code>{" "}
           file.
         </p>
-        <Link
-          href="/login"
+        <button
+          onClick={signOut}
           className="h-9 px-4 bg-card border border-border text-sm font-medium rounded-lg hover:bg-card-hover transition-colors"
         >
           Sign out
-        </Link>
+        </button>
       </div>
     );
   }
