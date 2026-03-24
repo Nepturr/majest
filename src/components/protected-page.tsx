@@ -2,6 +2,7 @@
 
 import { useAuth } from "@/components/auth-provider";
 import { ShieldX, Loader2, UserX } from "lucide-react";
+import Link from "next/link";
 
 interface ProtectedPageProps {
   pageId: string;
