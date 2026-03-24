@@ -15,10 +15,6 @@ import {
 import Image from "next/image";
 import { useState } from "react";
 
-const ADMIN_NAV = [
-  { label: "User Management", href: "/admin/users", icon: ShieldCheck },
-];
-
 export function Sidebar() {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
@@ -37,6 +33,8 @@ export function Sidebar() {
       .toUpperCase()
       .slice(0, 2) ?? "U";
 
+  const isAdminActive = pathname.startsWith("/admin");
+
   return (
     <aside
       className={cn(
@@ -44,7 +42,7 @@ export function Sidebar() {
         collapsed ? "w-[72px]" : "w-[260px]"
       )}
     >
-      {/* Header */}
+      {/* Logo */}
       <div className="flex items-center gap-3 px-4 h-16 border-b border-border shrink-0">
         <Image
           src="/logo.png"
@@ -60,85 +58,68 @@ export function Sidebar() {
         )}
       </div>
 
-      {/* Nav */}
+      {/* Main nav */}
       <nav className="flex-1 py-4 px-3 space-y-1 overflow-y-auto">
         {loading ? (
           <div className="flex items-center justify-center py-8">
             <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
           </div>
         ) : (
-          <>
-            {visiblePages.map((item) => {
-              const isActive = pathname === item.href;
-              const Icon = item.icon;
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
+          visiblePages.map((item) => {
+            const isActive = pathname === item.href;
+            const Icon = item.icon;
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={cn(
+                  "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200",
+                  isActive
+                    ? "bg-sidebar-active text-accent-light shadow-[inset_0_0_0_1px_rgba(34,64,196,0.2)]"
+                    : "text-muted hover:text-foreground hover:bg-sidebar-hover"
+                )}
+              >
+                <Icon
                   className={cn(
-                    "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200",
-                    isActive
-                      ? "bg-sidebar-active text-accent-light shadow-[inset_0_0_0_1px_rgba(34,64,196,0.2)]"
-                      : "text-muted hover:text-foreground hover:bg-sidebar-hover"
+                    "w-[18px] h-[18px] shrink-0",
+                    isActive && "text-accent"
                   )}
-                >
-                  <Icon
-                    className={cn(
-                      "w-[18px] h-[18px] shrink-0",
-                      isActive && "text-accent"
-                    )}
-                  />
-                  {!collapsed && (
-                    <span className="animate-fade-in">{item.label}</span>
-                  )}
-                </Link>
-              );
-            })}
-
-            {/* Admin section */}
-            {profile?.role === "admin" && (
-              <>
-                <div className="pt-2 pb-1">
-                  {!collapsed && (
-                    <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest px-3">
-                      Admin
-                    </p>
-                  )}
-                </div>
-                {ADMIN_NAV.map((item) => {
-                  const isActive = pathname.startsWith(item.href);
-                  const Icon = item.icon;
-                  return (
-                    <Link
-                      key={item.href}
-                      href={item.href}
-                      className={cn(
-                        "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200",
-                        isActive
-                          ? "bg-sidebar-active text-accent-light shadow-[inset_0_0_0_1px_rgba(34,64,196,0.2)]"
-                          : "text-muted hover:text-foreground hover:bg-sidebar-hover"
-                      )}
-                    >
-                      <Icon
-                        className={cn(
-                          "w-[18px] h-[18px] shrink-0",
-                          isActive && "text-accent"
-                        )}
-                      />
-                      {!collapsed && (
-                        <span className="animate-fade-in">{item.label}</span>
-                      )}
-                    </Link>
-                  );
-                })}
-              </>
-            )}
-          </>
+                />
+                {!collapsed && (
+                  <span className="animate-fade-in">{item.label}</span>
+                )}
+              </Link>
+            );
+          })
         )}
       </nav>
 
-      {/* User info + collapse */}
-      <div className="p-3 border-t border-border space-y-1">
+      {/* Bottom section */}
+      <div className="border-t border-border p-3 space-y-1.5">
+
+        {/* Admin button — only for admins */}
+        {profile?.role === "admin" && (
+          <Link
+            href="/admin"
+            className={cn(
+              "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-semibold transition-all duration-200 border",
+              isAdminActive
+                ? "bg-accent text-white border-accent shadow-[0_0_12px_rgba(34,64,196,0.3)]"
+                : "text-muted-foreground border-border hover:text-foreground hover:bg-sidebar-hover hover:border-border-light"
+            )}
+          >
+            <ShieldCheck
+              className={cn(
+                "w-[18px] h-[18px] shrink-0",
+                isAdminActive ? "text-white" : "text-muted-foreground"
+              )}
+            />
+            {!collapsed && (
+              <span className="animate-fade-in">Admin</span>
+            )}
+          </Link>
+        )}
+
         {/* User card */}
         {profile && (
           <div className="flex items-center gap-3 px-3 py-2 rounded-lg">
@@ -151,7 +132,7 @@ export function Sidebar() {
                   <p className="text-sm font-medium truncate">
                     {profile.full_name ?? profile.email}
                   </p>
-                  <span className="text-[10px] font-medium text-accent-light">
+                  <span className="text-[10px] font-medium text-muted-foreground">
                     {profile.role}
                   </span>
                 </div>
