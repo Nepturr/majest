@@ -35,10 +35,10 @@ export async function POST(req: NextRequest) {
   if (!admin) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const body = await req.json();
-  const { name, avatar_url, persona, lora_id, lora_thumbnail_url, brand_notes, status } = body;
+  const { name, avatar_url, persona, lora_id, brand_notes, status } = body;
 
   if (!name?.trim()) {
-    return NextResponse.json({ error: "Le nom est requis." }, { status: 400 });
+    return NextResponse.json({ error: "Name is required." }, { status: 400 });
   }
 
   const adminClient = createAdminClient();
@@ -49,7 +49,6 @@ export async function POST(req: NextRequest) {
       avatar_url: avatar_url?.trim() || null,
       persona: persona?.trim() || null,
       lora_id: lora_id?.trim() || null,
-      lora_thumbnail_url: lora_thumbnail_url?.trim() || null,
       brand_notes: brand_notes?.trim() || null,
       status: status ?? "active",
     })
