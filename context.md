@@ -2,7 +2,8 @@
 
 ## Règles de travail
 
-Après chaque modification de code, **push systématiquement sur `main`**, sauf si une action manuelle est requise de la part de l'utilisateur avant (ex: exécuter du SQL dans Supabase, configurer une variable d'environnement, etc.). Dans ce cas, indiquer clairement ce qui est à faire avant de pusher.
+- Après chaque modification de code, **push systématiquement sur `main`**, sauf si une action manuelle est requise de la part de l'utilisateur avant (ex: exécuter du SQL dans Supabase, configurer une variable d'environnement, etc.). Dans ce cas, indiquer clairement ce qui est à faire avant de pusher.
+- **Le frontend est entièrement en anglais.** Tout texte visible dans l'interface (labels, placeholders, messages d'erreur, titres, boutons) doit être en anglais.
 
 ## Vision
 

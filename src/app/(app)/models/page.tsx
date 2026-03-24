@@ -7,15 +7,13 @@ import { cn } from "@/lib/utils";
 import type { Model } from "@/types";
 import { Sparkles, Loader2, ImageOff } from "lucide-react";
 
-/* ─── Avatar ─── */
 function ModelAvatar({ model }: { model: Model }) {
   const [imgError, setImgError] = useState(false);
-  const src = model.lora_thumbnail_url || model.avatar_url;
 
-  if (src && !imgError) {
+  if (model.avatar_url && !imgError) {
     return (
       <img
-        src={src}
+        src={model.avatar_url}
         alt={model.name}
         onError={() => setImgError(true)}
         className="w-12 h-12 rounded-full object-cover border border-border shrink-0"
@@ -25,7 +23,7 @@ function ModelAvatar({ model }: { model: Model }) {
 
   return (
     <div className="w-12 h-12 rounded-full bg-accent/15 border border-accent/25 flex items-center justify-center shrink-0">
-      {src && imgError ? (
+      {model.avatar_url && imgError ? (
         <ImageOff className="w-4 h-4 text-muted-foreground" />
       ) : (
         <span className="text-lg font-bold text-accent-light">
@@ -36,7 +34,6 @@ function ModelAvatar({ model }: { model: Model }) {
   );
 }
 
-/* ─── Page ─── */
 export default function ModelsPage() {
   const [models, setModels] = useState<Model[]>([]);
   const [loading, setLoading] = useState(true);
@@ -44,16 +41,13 @@ export default function ModelsPage() {
   useEffect(() => {
     fetch("/api/admin/models")
       .then((r) => r.json())
-      .then((d) => {
-        setModels(d.models ?? []);
-        setLoading(false);
-      })
+      .then((d) => { setModels(d.models ?? []); setLoading(false); })
       .catch(() => setLoading(false));
   }, []);
 
   return (
     <ProtectedPage pageId="models">
-      <Header title="Models" subtitle="Personas IA et comptes associés" />
+      <Header title="Models" subtitle="AI personas and associated accounts" />
 
       <div className="p-6">
         {loading ? (
@@ -63,9 +57,9 @@ export default function ModelsPage() {
         ) : models.length === 0 ? (
           <div className="text-center py-24 bg-card border border-border rounded-xl">
             <Sparkles className="w-10 h-10 text-muted-foreground mx-auto mb-3" />
-            <p className="text-sm font-medium">Aucune modèle pour l'instant</p>
+            <p className="text-sm font-medium">No models yet</p>
             <p className="text-xs text-muted-foreground mt-1">
-              Un admin peut en ajouter depuis le panel Admin.
+              An admin can add models from the Admin panel.
             </p>
           </div>
         ) : (
@@ -107,7 +101,7 @@ export default function ModelsPage() {
                       "w-1.5 h-1.5 rounded-full",
                       model.status === "active" ? "bg-success" : "bg-muted-foreground"
                     )} />
-                    {model.status === "active" ? "Actif" : "Inactif"}
+                    {model.status === "active" ? "Active" : "Inactive"}
                   </span>
                 </div>
               </div>

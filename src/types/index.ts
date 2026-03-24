@@ -63,7 +63,6 @@ export interface Model {
   avatar_url: string | null;
   persona: string | null;
   lora_id: string | null;
-  lora_thumbnail_url: string | null;
   brand_notes: string | null;
   status: "active" | "inactive";
   created_at: string;

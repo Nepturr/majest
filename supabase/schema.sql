@@ -69,16 +69,15 @@ create trigger on_profile_updated
 -- ============================================================
 
 create table if not exists public.models (
-  id                 uuid        default gen_random_uuid() primary key,
-  name               text        not null,
-  avatar_url         text,
-  persona            text,
-  lora_id            text,
-  lora_thumbnail_url text,
-  brand_notes        text,
-  status             text        not null default 'active' check (status in ('active', 'inactive')),
-  created_at         timestamptz not null default now(),
-  updated_at         timestamptz not null default now()
+  id          uuid        default gen_random_uuid() primary key,
+  name        text        not null,
+  avatar_url  text,
+  persona     text,
+  lora_id     text,
+  brand_notes text,
+  status      text        not null default 'active' check (status in ('active', 'inactive')),
+  created_at  timestamptz not null default now(),
+  updated_at  timestamptz not null default now()
 );
 
 alter table public.models enable row level security;

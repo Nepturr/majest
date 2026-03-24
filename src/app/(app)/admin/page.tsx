@@ -1,14 +1,15 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Header } from "@/components/header";
 import { ALL_PAGES } from "@/lib/pages";
 import { cn } from "@/lib/utils";
+import { createClient } from "@/lib/supabase/client";
 import type { Model } from "@/types";
 import {
   Plus, Pencil, Trash2, Shield, User, Copy, Check,
   X, Loader2, AlertCircle, Users, Plug, Sparkles,
-  ImageOff,
+  ImageOff, Upload, FileBox,
 } from "lucide-react";
 
 /* ─── Tab config ─── */
@@ -36,7 +37,6 @@ export default function AdminPage() {
     <>
       <Header title="Admin" subtitle="Manage your workspace" />
 
-      {/* Tab bar */}
       <div className="border-b border-border px-6">
         <div className="flex items-center gap-1">
           {TABS.map((tab) => {
@@ -61,13 +61,217 @@ export default function AdminPage() {
         </div>
       </div>
 
-      {/* Tab content */}
       <div className="p-6">
         {activeTab === "users" && <UsersTab />}
         {activeTab === "models" && <ModelsTab />}
         {activeTab === "api" && <ApiTab />}
       </div>
     </>
+  );
+}
+
+/* ─────────────────────────────────────────────
+   UPLOAD HELPERS
+───────────────────────────────────────────── */
+
+async function uploadAvatar(file: File): Promise<string> {
+  const supabase = createClient();
+  const ext = file.name.split(".").pop();
+  const path = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+  const { error } = await supabase.storage.from("avatars").upload(path, file, { upsert: true });
+  if (error) throw new Error(error.message);
+  const { data } = supabase.storage.from("avatars").getPublicUrl(path);
+  return data.publicUrl;
+}
+
+async function uploadLora(file: File): Promise<string> {
+  const supabase = createClient();
+  const { error } = await supabase.storage.from("lora-files").upload(file.name, file, { upsert: true });
+  if (error) throw new Error(error.message);
+  return file.name;
+}
+
+/* ─── Avatar Drop Zone ─── */
+function AvatarDropZone({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (url: string) => void;
+}) {
+  const [dragging, setDragging] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState("");
+  const [imgError, setImgError] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const handle = async (file: File) => {
+    if (!file.type.startsWith("image/")) {
+      setError("Please select an image file.");
+      return;
+    }
+    setError("");
+    setUploading(true);
+    setImgError(false);
+    try {
+      const url = await uploadAvatar(file);
+      onChange(url);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Upload failed.");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  if (value && !imgError) {
+    return (
+      <div className="relative group w-20 h-20">
+        <img
+          src={value}
+          alt="Avatar"
+          onError={() => setImgError(true)}
+          className="w-20 h-20 rounded-full object-cover border border-border"
+        />
+        <button
+          type="button"
+          onClick={() => onChange("")}
+          className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-danger border border-background flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+        >
+          <X className="w-3 h-3 text-white" />
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-1.5">
+      <div
+        onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+        onDragLeave={() => setDragging(false)}
+        onDrop={(e) => {
+          e.preventDefault();
+          setDragging(false);
+          const file = e.dataTransfer.files[0];
+          if (file) handle(file);
+        }}
+        onClick={() => !uploading && inputRef.current?.click()}
+        className={cn(
+          "w-full h-28 rounded-xl border-2 border-dashed flex flex-col items-center justify-center gap-2 cursor-pointer transition-all",
+          dragging ? "border-accent bg-accent/5" : "border-border hover:border-border-light hover:bg-card-hover",
+          uploading && "pointer-events-none opacity-60"
+        )}
+      >
+        <input
+          ref={inputRef}
+          type="file"
+          accept="image/*"
+          className="sr-only"
+          onChange={(e) => { const f = e.target.files?.[0]; if (f) handle(f); }}
+        />
+        {uploading ? (
+          <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+        ) : (
+          <>
+            <Upload className="w-5 h-5 text-muted-foreground" />
+            <span className="text-xs text-muted-foreground text-center">
+              Drop an image or <span className="text-accent-light">browse</span>
+            </span>
+          </>
+        )}
+      </div>
+      {error && <p className="text-xs text-danger">{error}</p>}
+    </div>
+  );
+}
+
+/* ─── LoRA Drop Zone ─── */
+function LoraDropZone({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (filename: string) => void;
+}) {
+  const [dragging, setDragging] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const handle = async (file: File) => {
+    if (!file.name.endsWith(".safetensors")) {
+      setError("Only .safetensors files are accepted.");
+      return;
+    }
+    setError("");
+    setUploading(true);
+    try {
+      const filename = await uploadLora(file);
+      onChange(filename);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Upload failed.");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  if (value) {
+    return (
+      <div className="flex items-center gap-3 px-4 py-3 bg-accent/5 border border-accent/20 rounded-xl">
+        <FileBox className="w-5 h-5 text-accent-light shrink-0" />
+        <code className="text-xs text-accent-light font-mono flex-1 truncate">{value}</code>
+        <button
+          type="button"
+          onClick={() => onChange("")}
+          className="w-5 h-5 rounded flex items-center justify-center hover:bg-accent/20 transition-colors shrink-0"
+        >
+          <X className="w-3 h-3 text-muted-foreground" />
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-1.5">
+      <div
+        onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+        onDragLeave={() => setDragging(false)}
+        onDrop={(e) => {
+          e.preventDefault();
+          setDragging(false);
+          const file = e.dataTransfer.files[0];
+          if (file) handle(file);
+        }}
+        onClick={() => !uploading && inputRef.current?.click()}
+        className={cn(
+          "w-full h-28 rounded-xl border-2 border-dashed flex flex-col items-center justify-center gap-2 cursor-pointer transition-all",
+          dragging ? "border-accent bg-accent/5" : "border-border hover:border-border-light hover:bg-card-hover",
+          uploading && "pointer-events-none opacity-60"
+        )}
+      >
+        <input
+          ref={inputRef}
+          type="file"
+          accept=".safetensors"
+          className="sr-only"
+          onChange={(e) => { const f = e.target.files?.[0]; if (f) handle(f); }}
+        />
+        {uploading ? (
+          <>
+            <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+            <span className="text-xs text-muted-foreground">Uploading…</span>
+          </>
+        ) : (
+          <>
+            <FileBox className="w-5 h-5 text-muted-foreground" />
+            <span className="text-xs text-muted-foreground text-center">
+              Drop a <span className="font-mono text-accent-light">.safetensors</span> file or{" "}
+              <span className="text-accent-light">browse</span>
+            </span>
+          </>
+        )}
+      </div>
+      {error && <p className="text-xs text-danger">{error}</p>}
+    </div>
   );
 }
 
@@ -105,7 +309,7 @@ function ModelsTab() {
         <div>
           <h3 className="text-sm font-semibold">AI Models</h3>
           <p className="text-xs text-muted-foreground mt-0.5">
-            Gérez les personas IA et leurs LoRA associés
+            Manage AI personas and their associated LoRA files
           </p>
         </div>
         <button
@@ -124,9 +328,9 @@ function ModelsTab() {
       ) : models.length === 0 ? (
         <div className="text-center py-20 bg-card border border-border rounded-xl">
           <Sparkles className="w-10 h-10 text-muted-foreground mx-auto mb-3" />
-          <p className="text-sm font-medium">Aucune modèle pour l'instant</p>
+          <p className="text-sm font-medium">No models yet</p>
           <p className="text-xs text-muted-foreground mt-1">
-            Ajoutez votre première modèle pour commencer.
+            Add your first model to get started.
           </p>
         </div>
       ) : (
@@ -134,11 +338,11 @@ function ModelsTab() {
           <table className="w-full">
             <thead>
               <tr className="border-b border-border">
-                <th className="text-left text-xs font-medium text-muted-foreground px-5 py-3">Modèle</th>
-                <th className="text-left text-xs font-medium text-muted-foreground px-5 py-3">LoRA ID</th>
+                <th className="text-left text-xs font-medium text-muted-foreground px-5 py-3">Model</th>
+                <th className="text-left text-xs font-medium text-muted-foreground px-5 py-3">LoRA</th>
                 <th className="text-left text-xs font-medium text-muted-foreground px-5 py-3">Persona</th>
-                <th className="text-left text-xs font-medium text-muted-foreground px-5 py-3">Statut</th>
-                <th className="text-left text-xs font-medium text-muted-foreground px-5 py-3">Ajoutée</th>
+                <th className="text-left text-xs font-medium text-muted-foreground px-5 py-3">Status</th>
+                <th className="text-left text-xs font-medium text-muted-foreground px-5 py-3">Added</th>
                 <th className="px-5 py-3" />
               </tr>
             </thead>
@@ -173,21 +377,21 @@ function ModelsTab() {
                     <StatusBadge status={model.status} />
                   </td>
                   <td className="px-5 py-4 text-xs text-muted-foreground">
-                    {new Date(model.created_at).toLocaleDateString("fr-FR")}
+                    {new Date(model.created_at).toLocaleDateString("en-GB")}
                   </td>
                   <td className="px-5 py-4">
                     <div className="flex items-center gap-1 justify-end">
                       <button
                         onClick={() => setEditModel(model)}
                         className="w-8 h-8 rounded-lg hover:bg-background border border-transparent hover:border-border flex items-center justify-center transition-all"
-                        title="Modifier"
+                        title="Edit"
                       >
                         <Pencil className="w-3.5 h-3.5 text-muted-foreground" />
                       </button>
                       <button
                         onClick={() => setDeleteModel(model)}
                         className="w-8 h-8 rounded-lg hover:bg-danger/10 border border-transparent hover:border-danger/20 flex items-center justify-center transition-all"
-                        title="Supprimer"
+                        title="Delete"
                       >
                         <Trash2 className="w-3.5 h-3.5 text-muted-foreground" />
                       </button>
@@ -230,12 +434,10 @@ function ModelAvatar({ model, size = "sm" }: { model: Model; size?: "sm" | "lg" 
   const textSize = size === "lg" ? "text-lg" : "text-sm";
   const [imgError, setImgError] = useState(false);
 
-  const src = model.lora_thumbnail_url || model.avatar_url;
-
-  if (src && !imgError) {
+  if (model.avatar_url && !imgError) {
     return (
       <img
-        src={src}
+        src={model.avatar_url}
         alt={model.name}
         onError={() => setImgError(true)}
         className={cn(dim, "rounded-full object-cover border border-border shrink-0")}
@@ -243,21 +445,17 @@ function ModelAvatar({ model, size = "sm" }: { model: Model; size?: "sm" | "lg" 
     );
   }
 
-  if (imgError || (!model.lora_thumbnail_url && !model.avatar_url)) {
-    return (
-      <div className={cn(dim, "rounded-full bg-accent/15 border border-accent/25 flex items-center justify-center shrink-0")}>
-        {src && imgError ? (
-          <ImageOff className="w-4 h-4 text-muted-foreground" />
-        ) : (
-          <span className={cn("font-bold text-accent-light", textSize)}>
-            {model.name[0].toUpperCase()}
-          </span>
-        )}
-      </div>
-    );
-  }
-
-  return null;
+  return (
+    <div className={cn(dim, "rounded-full bg-accent/15 border border-accent/25 flex items-center justify-center shrink-0")}>
+      {model.avatar_url && imgError ? (
+        <ImageOff className="w-4 h-4 text-muted-foreground" />
+      ) : (
+        <span className={cn("font-bold text-accent-light", textSize)}>
+          {model.name[0].toUpperCase()}
+        </span>
+      )}
+    </div>
+  );
 }
 
 /* ─── Status Badge ─── */
@@ -270,12 +468,12 @@ function StatusBadge({ status }: { status: "active" | "inactive" }) {
         : "bg-muted-foreground/10 text-muted-foreground border-border"
     )}>
       <span className={cn("w-1.5 h-1.5 rounded-full", status === "active" ? "bg-success" : "bg-muted-foreground")} />
-      {status === "active" ? "Actif" : "Inactif"}
+      {status === "active" ? "Active" : "Inactive"}
     </span>
   );
 }
 
-/* ─── Model Form Modal (Add + Edit) ─── */
+/* ─── Model Form Modal ─── */
 interface ModelFormModalProps {
   model?: Model;
   onClose: () => void;
@@ -289,7 +487,6 @@ function ModelFormModal({ model, onClose, onSuccess }: ModelFormModalProps) {
   const [avatarUrl, setAvatarUrl] = useState(model?.avatar_url ?? "");
   const [persona, setPersona] = useState(model?.persona ?? "");
   const [loraId, setLoraId] = useState(model?.lora_id ?? "");
-  const [loraThumbnailUrl, setLoraThumbnailUrl] = useState(model?.lora_thumbnail_url ?? "");
   const [brandNotes, setBrandNotes] = useState(model?.brand_notes ?? "");
   const [status, setStatus] = useState<"active" | "inactive">(model?.status ?? "active");
   const [loading, setLoading] = useState(false);
@@ -300,55 +497,47 @@ function ModelFormModal({ model, onClose, onSuccess }: ModelFormModalProps) {
     setLoading(true);
     setError("");
 
-    const payload = {
-      name,
-      avatar_url: avatarUrl,
-      persona,
-      lora_id: loraId,
-      lora_thumbnail_url: loraThumbnailUrl,
-      brand_notes: brandNotes,
-      status,
-    };
-
     const res = await fetch(
       isEdit ? `/api/admin/models/${model.id}` : "/api/admin/models",
       {
         method: isEdit ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({
+          name,
+          avatar_url: avatarUrl,
+          persona,
+          lora_id: loraId,
+          brand_notes: brandNotes,
+          status,
+        }),
       }
     );
 
     const data = await res.json();
-    if (!res.ok) setError(data.error ?? "Une erreur est survenue.");
+    if (!res.ok) setError(data.error ?? "Something went wrong.");
     else onSuccess();
     setLoading(false);
   };
 
   return (
-    <Modal title={isEdit ? `Modifier — ${model.name}` : "Ajouter une modèle"} onClose={onClose}>
+    <Modal title={isEdit ? `Edit — ${model.name}` : "Add a Model"} onClose={onClose}>
       <form onSubmit={handleSubmit} className="space-y-4">
-        {/* Nom */}
-        <Field label="Nom *">
+
+        {/* Name */}
+        <Field label="Name *">
           <input
             type="text"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder="ex: Suki"
+            placeholder="e.g. Suki"
             required
             className={inputCls}
           />
         </Field>
 
-        {/* Avatar URL */}
-        <Field label="Avatar URL">
-          <input
-            type="url"
-            value={avatarUrl}
-            onChange={(e) => setAvatarUrl(e.target.value)}
-            placeholder="https://..."
-            className={inputCls}
-          />
+        {/* Avatar */}
+        <Field label="Avatar">
+          <AvatarDropZone value={avatarUrl} onChange={setAvatarUrl} />
         </Field>
 
         {/* Persona */}
@@ -356,63 +545,33 @@ function ModelFormModal({ model, onClose, onSuccess }: ModelFormModalProps) {
           <textarea
             value={persona}
             onChange={(e) => setPersona(e.target.value)}
-            placeholder="ex: Asiatique, 23 ans, 1m62, yeux en amande, cheveux noirs longs…"
+            placeholder="e.g. Asian, 23 years old, 5'4", almond eyes, long black hair…"
             rows={3}
             className={cn(inputCls, "h-auto resize-none py-3")}
           />
           <p className="text-[11px] text-muted-foreground">
-            Description physique fixe — guidera l'IA lors de la génération de contenu.
+            Fixed physical description — will guide the AI during content generation.
           </p>
         </Field>
 
-        {/* LoRA ID + Thumbnail — côte à côte */}
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="LoRA ID">
-            <input
-              type="text"
-              value={loraId}
-              onChange={(e) => setLoraId(e.target.value)}
-              placeholder="suki-v2.safetensors"
-              className={cn(inputCls, "font-mono text-xs")}
-            />
-          </Field>
-          <Field label="LoRA Thumbnail URL">
-            <input
-              type="url"
-              value={loraThumbnailUrl}
-              onChange={(e) => setLoraThumbnailUrl(e.target.value)}
-              placeholder="https://..."
-              className={inputCls}
-            />
-          </Field>
-        </div>
+        {/* LoRA File */}
+        <Field label="LoRA File">
+          <LoraDropZone value={loraId} onChange={setLoraId} />
+        </Field>
 
-        {/* Preview thumbnail si URL renseignée */}
-        {loraThumbnailUrl && (
-          <div className="flex items-center gap-3 p-3 bg-background rounded-lg border border-border">
-            <img
-              src={loraThumbnailUrl}
-              alt="Thumbnail preview"
-              className="w-10 h-10 rounded-full object-cover border border-border"
-              onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
-            />
-            <p className="text-xs text-muted-foreground">Aperçu du thumbnail LoRA</p>
-          </div>
-        )}
-
-        {/* Brand notes */}
+        {/* Brand Notes */}
         <Field label="Brand Notes">
           <textarea
             value={brandNotes}
             onChange={(e) => setBrandNotes(e.target.value)}
-            placeholder="Notes libres sur le branding, la tonalité, les sujets à éviter…"
+            placeholder="Free notes on branding, tone, topics to avoid…"
             rows={3}
             className={cn(inputCls, "h-auto resize-none py-3")}
           />
         </Field>
 
-        {/* Statut */}
-        <Field label="Statut">
+        {/* Status */}
+        <Field label="Status">
           <div className="grid grid-cols-2 gap-2">
             {(["active", "inactive"] as const).map((s) => (
               <button
@@ -432,7 +591,7 @@ function ModelFormModal({ model, onClose, onSuccess }: ModelFormModalProps) {
                   "w-2 h-2 rounded-full",
                   s === "active" ? "bg-success" : "bg-muted-foreground"
                 )} />
-                {s === "active" ? "Actif" : "Inactif"}
+                {s === "active" ? "Active" : "Inactive"}
               </button>
             ))}
           </div>
@@ -451,11 +610,11 @@ function ModelFormModal({ model, onClose, onSuccess }: ModelFormModalProps) {
           className="w-full h-11 bg-accent hover:bg-accent-dark disabled:opacity-50 text-white text-sm font-semibold rounded-lg flex items-center justify-center gap-2 transition-colors"
         >
           {loading ? (
-            <><Loader2 className="w-4 h-4 animate-spin" /> {isEdit ? "Sauvegarde..." : "Création..."}</>
+            <><Loader2 className="w-4 h-4 animate-spin" /> {isEdit ? "Saving…" : "Creating…"}</>
           ) : isEdit ? (
-            "Sauvegarder"
+            "Save Changes"
           ) : (
-            <><Plus className="w-4 h-4" /> Ajouter la modèle</>
+            <><Plus className="w-4 h-4" /> Add Model</>
           )}
         </button>
       </form>
@@ -474,28 +633,28 @@ function ConfirmDeleteModelModal({
   onConfirm: () => void;
 }) {
   return (
-    <Modal title="Supprimer la modèle" onClose={onClose}>
+    <Modal title="Delete Model" onClose={onClose}>
       <div className="space-y-4">
         <div className="flex items-center gap-3 p-3 bg-background rounded-lg border border-border">
           <ModelAvatar model={model} size="sm" />
           <p className="text-sm font-medium">{model.name}</p>
         </div>
         <p className="text-sm text-muted-foreground">
-          Cette action est irréversible. Tous les comptes associés à{" "}
-          <strong className="text-foreground">{model.name}</strong> seront également supprimés.
+          This action cannot be undone. All accounts linked to{" "}
+          <strong className="text-foreground">{model.name}</strong> will also be deleted.
         </p>
         <div className="flex gap-3">
           <button
             onClick={onClose}
             className="flex-1 h-10 bg-card border border-border text-sm font-medium rounded-lg hover:bg-card-hover transition-colors"
           >
-            Annuler
+            Cancel
           </button>
           <button
             onClick={onConfirm}
             className="flex-1 h-10 bg-danger hover:bg-danger/90 text-white text-sm font-semibold rounded-lg flex items-center justify-center gap-2 transition-colors"
           >
-            <Trash2 className="w-4 h-4" /> Supprimer
+            <Trash2 className="w-4 h-4" /> Delete
           </button>
         </div>
       </div>
@@ -633,7 +792,7 @@ function UsersTab() {
                       </p>
                     </td>
                     <td className="px-5 py-4 text-xs text-muted-foreground">
-                      {new Date(user.created_at).toLocaleDateString()}
+                      {new Date(user.created_at).toLocaleDateString("en-GB")}
                     </td>
                     <td className="px-5 py-4">
                       <div className="flex items-center gap-1 justify-end">
@@ -810,7 +969,7 @@ function AddUserModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: 
           </div>
         )}
         <button type="submit" disabled={loading} className="w-full h-11 bg-accent hover:bg-accent-dark disabled:opacity-50 text-white text-sm font-semibold rounded-lg flex items-center justify-center gap-2 transition-colors">
-          {loading ? <><Loader2 className="w-4 h-4 animate-spin" /> Creating...</> : <><Plus className="w-4 h-4" /> Create User</>}
+          {loading ? <><Loader2 className="w-4 h-4 animate-spin" /> Creating…</> : <><Plus className="w-4 h-4" /> Create User</>}
         </button>
       </form>
     </Modal>
@@ -891,7 +1050,7 @@ function EditPermissionsModal({ user, onClose, onSuccess }: { user: Profile; onC
           </div>
         )}
         <button type="submit" disabled={loading} className="w-full h-11 bg-accent hover:bg-accent-dark disabled:opacity-50 text-white text-sm font-semibold rounded-lg flex items-center justify-center gap-2 transition-colors">
-          {loading ? <><Loader2 className="w-4 h-4 animate-spin" /> Saving...</> : "Save Changes"}
+          {loading ? <><Loader2 className="w-4 h-4 animate-spin" /> Saving…</> : "Save Changes"}
         </button>
       </form>
     </Modal>
