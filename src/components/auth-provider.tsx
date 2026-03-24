@@ -44,6 +44,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const supabaseRef = useRef(createClient());
 
   const fetchProfile = useCallback(async (userId: string) => {
+    console.log("[auth] fetchProfile →", userId);
     try {
       const { data, error } = await supabaseRef.current
         .from("profiles")
@@ -51,6 +52,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         .eq("id", userId)
         .single();
       if (error) console.warn("[auth] fetchProfile error:", error.message);
+      else console.log("[auth] profile loaded:", data?.role);
       setProfile(data ?? null);
     } catch (e) {
       console.warn("[auth] fetchProfile threw:", e);
@@ -64,17 +66,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const supabase = supabaseRef.current;
+    let done = false;
 
-    // Fallback: unblock UI after 5s no matter what
-    const timeout = setTimeout(() => setLoading(false), 5000);
+    // Called at most once — whichever resolves first (event or timeout)
+    const finish = () => {
+      if (!done) {
+        done = true;
+        console.log("[auth] finish() → setLoading(false)");
+        setLoading(false);
+      }
+    };
 
-    // onAuthStateChange handles ALL events including INITIAL_SESSION (page reload)
-    // When INITIAL_SESSION fires, the client already has the auth token loaded
-    // → safe to make authenticated DB queries right away
+    // Hard failsafe — NEVER cleared early, fires after 8s no matter what
+    const timeout = setTimeout(() => {
+      console.warn("[auth] timeout hit — forcing setLoading(false)");
+      finish();
+    }, 8000);
+
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (event, session) => {
-      clearTimeout(timeout);
+      console.log("[auth] onAuthStateChange →", event, session?.user?.id ?? "no user");
       try {
         setUser(session?.user ?? null);
         if (session?.user) {
@@ -85,7 +97,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       } catch {
         setProfile(null);
       } finally {
-        setLoading(false);
+        finish(); // Always unblock — timeout stays alive as backup
       }
     });
 
