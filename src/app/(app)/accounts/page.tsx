@@ -193,8 +193,7 @@ interface AccountModalProps {
 function AccountModal({ account, onClose, onSuccess }: AccountModalProps) {
   const isEdit = !!account;
 
-  // Form state
-  const [handle, setHandle] = useState(account?.instagram_handle ?? "");
+  // Form state — handle is derived from OneUp, not typed manually
   const [niche, setNiche] = useState(account?.niche ?? "");
   const [status, setStatus] = useState<"active" | "inactive">(account?.status ?? "active");
 
@@ -328,14 +327,17 @@ function AccountModal({ account, onClose, onSuccess }: AccountModalProps) {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError("");
-    if (!handle.trim()) { setFormError("Instagram handle is required."); return; }
+    if (!selectedOneUp) { setFormError("Please select an Instagram account from OneUp."); return; }
     if (!selectedModel) { setFormError("Please select a model."); return; }
+
+    // Handle is derived from the OneUp account name
+    const derivedHandle = selectedOneUp.social_network_name.replace(/^@/, "");
 
     setSaving(true);
     const payload = {
       model_id: selectedModel.id,
       of_account_id: selectedOFAccount?.id ?? null,
-      instagram_handle: handle.trim().replace(/^@/, ""),
+      instagram_handle: derivedHandle,
       oneup_social_network_id: selectedOneUp?.social_network_id ?? null,
       oneup_social_network_name: selectedOneUp?.social_network_name ?? null,
       oneup_category_id: selectedOneUp?.category_id ?? null,
@@ -383,36 +385,43 @@ function AccountModal({ account, onClose, onSuccess }: AccountModalProps) {
         <form onSubmit={handleSubmit} className="overflow-y-auto flex-1">
           <div className="px-6 py-5 space-y-5">
 
-            {/* Section: Basic info */}
+            {/* Section: Instagram account from OneUp */}
             <div>
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">Basic Info</p>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="col-span-2 sm:col-span-1">
-                  <label className="block text-xs font-medium text-muted-foreground mb-1.5">
-                    Instagram handle <span className="text-danger">*</span>
-                  </label>
-                  <div className="relative">
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">@</span>
-                    <input
-                      type="text"
-                      value={handle}
-                      onChange={(e) => setHandle(e.target.value.replace(/^@/, ""))}
-                      placeholder="username"
-                      className="w-full h-10 pl-7 pr-3 bg-background border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent/50 transition-all"
-                    />
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-muted-foreground mb-1.5">Niche</label>
-                  <input
-                    type="text"
-                    value={niche}
-                    onChange={(e) => setNiche(e.target.value)}
-                    placeholder="e.g. Fitness, Lifestyle…"
-                    className="w-full h-10 px-3 bg-background border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent/50 transition-all"
-                  />
-                </div>
-              </div>
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1">Instagram Account</p>
+              <p className="text-xs text-muted-foreground mb-3">Select an account from OneUp — only unlinked accounts are shown.</p>
+              <SearchableSelect<OneUpSocialAccount>
+                label="Instagram account *"
+                placeholder="Pick an account from OneUp…"
+                items={oneupAccounts}
+                value={selectedOneUp}
+                onSelect={setSelectedOneUp}
+                getKey={(a) => a.social_network_id}
+                getLabel={(a) => a.social_network_name}
+                getSubLabel={(a) => a.category_name}
+                isDisabled={(a) => a.isAssigned && a.social_network_id !== account?.oneup_social_network_id}
+                loading={loadingOneup}
+                error={errorOneup}
+              />
+              {selectedOneUp && (
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Handle: <span className="font-mono text-foreground">@{selectedOneUp.social_network_name}</span>
+                  {" · "}Category: <span className="text-foreground">{selectedOneUp.category_name}</span>
+                </p>
+              )}
+            </div>
+
+            <hr className="border-border" />
+
+            {/* Section: Niche */}
+            <div>
+              <label className="block text-xs font-medium text-muted-foreground mb-1.5">Niche / Description</label>
+              <textarea
+                value={niche}
+                onChange={(e) => setNiche(e.target.value)}
+                placeholder="e.g. Fitness lifestyle, 18-35 women, English-speaking audience. Posts 5x/week. Focus on transformation & motivation content."
+                rows={3}
+                className="w-full px-3 py-2.5 bg-background border border-border rounded-lg text-sm resize-none focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent/50 transition-all placeholder:text-muted-foreground"
+              />
             </div>
 
             <hr className="border-border" />
@@ -430,26 +439,6 @@ function AccountModal({ account, onClose, onSuccess }: AccountModalProps) {
                 getLabel={(m) => m.name}
                 getSubLabel={(m) => m.status === "inactive" ? "Inactive" : null}
                 loading={loadingModels}
-              />
-            </div>
-
-            <hr className="border-border" />
-
-            {/* Section: OneUp */}
-            <div>
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">OneUp Account (Scheduling)</p>
-              <SearchableSelect<OneUpSocialAccount>
-                label="Instagram account in OneUp"
-                placeholder="Pick a OneUp account…"
-                items={oneupAccounts}
-                value={selectedOneUp}
-                onSelect={setSelectedOneUp}
-                getKey={(a) => a.social_network_id}
-                getLabel={(a) => a.social_network_name}
-                getSubLabel={(a) => a.category_name}
-                isDisabled={(a) => a.isAssigned && a.social_network_id !== account?.oneup_social_network_id}
-                loading={loadingOneup}
-                error={errorOneup}
               />
             </div>
 

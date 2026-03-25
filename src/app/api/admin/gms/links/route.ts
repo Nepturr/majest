@@ -41,9 +41,7 @@ export async function GET() {
   }
 
   const json = await res.json();
-  // GMS links are under .data or .links depending on version
-  const rawLinks: { _id: string; title?: string; name?: string; url?: string; destination?: string }[] =
-    json.data ?? json.links ?? [];
+  const rawLinks: Record<string, unknown>[] = json.data ?? json.links ?? json ?? [];
 
   // Get already-assigned GMS link IDs from our DB
   const { data: assigned } = await adminClient
@@ -53,12 +51,48 @@ export async function GET() {
 
   const assignedIds = new Set((assigned ?? []).map((r) => r.get_my_social_link_id));
 
-  const links = rawLinks.map((link) => ({
-    id: link._id,
-    title: link.title ?? link.name ?? link._id,
-    url: link.url ?? link.destination ?? null,
-    isAssigned: assignedIds.has(link._id),
-  }));
+  const links = rawLinks.map((link) => {
+    const id = (link._id ?? link.id ?? "") as string;
+
+    // Try every plausible title field
+    const title = (
+      link.title ??
+      link.name ??
+      link.label ??
+      link.alias ??
+      link.slug ??
+      link.username ??
+      link.handle ??
+      link.page_title ??
+      link.pageTitle
+    ) as string | undefined;
+
+    // Try every plausible URL field
+    const url = (
+      link.shortUrl ??
+      link.short_url ??
+      link.shortlink ??
+      link.short_link ??
+      link.url ??
+      link.destination ??
+      link.redirect_url ??
+      link.link
+    ) as string | undefined;
+
+    // Best display: title if meaningful, else the URL slug, else short ID
+    const displayTitle = title?.trim()
+      ? title.trim()
+      : url?.trim()
+      ? url.replace(/^https?:\/\//, "")   // strip protocol for cleaner display
+      : id.slice(0, 12) + "…";
+
+    return {
+      id,
+      title: displayTitle,
+      url: url ?? null,
+      isAssigned: assignedIds.has(id),
+    };
+  });
 
   return NextResponse.json({ links });
 }
