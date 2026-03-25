@@ -2,7 +2,10 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { NextRequest, NextResponse } from "next/server";
 
-const TIER1 = new Set(["US", "GB", "CA", "AU", "DE", "FR"]);
+// GMS uses 3-letter country codes ("USA", "GBR", etc.)
+const TIER1_3 = new Set(["USA", "GBR", "CAN", "AUS", "DEU", "FRA"]);
+// Fallback for 2-letter ISO codes
+const TIER1_2 = new Set(["US", "GB", "CA", "AU", "DE", "FR"]);
 
 async function isAuthorized(req: NextRequest): Promise<boolean> {
   const cronSecret = process.env.CRON_SECRET;
@@ -105,22 +108,26 @@ export async function POST(req: NextRequest) {
               if (overviewRes.value.ok) {
                 const d = (await overviewRes.value.json())?.data ?? {};
                 total_clicks = d.totalClicks ?? d.total_clicks ?? d.clicks ?? null;
-                unique_visitors = d.uniqueVisitors ?? d.unique_visitors ?? null;
-                accountDetails.push(`overview OK: ${total_clicks} clicks`);
+                // uniqueVisitors can be a nested object { uniqueVisitors: N } or a plain number
+                const uv = d.uniqueVisitors ?? d.unique_visitors;
+                unique_visitors = typeof uv === "number" ? uv : (uv?.uniqueVisitors ?? null);
+                accountDetails.push(`overview OK: ${total_clicks} clicks, ${unique_visitors} unique`);
               } else {
                 accountDetails.push(`overview ERR: ${overviewRes.value.status}`);
               }
             }
 
             if (countriesRes.status === "fulfilled" && countriesRes.value.ok) {
-              const list: Array<{ country: string; visitors?: number; clicks?: number }> =
+              // GMS returns 3-letter codes (USA, GBR, CAN…) with count field
+              const list: Array<{ country: string; code?: string | null; count?: number; visitors?: number; clicks?: number }> =
                 (await countriesRes.value.json())?.data ?? [];
               if (Array.isArray(list) && list.length > 0) {
-                const total = list.reduce((s, c) => s + (c.visitors ?? c.clicks ?? 0), 0);
+                const total = list.reduce((s, c) => s + (c.count ?? c.visitors ?? c.clicks ?? 0), 0);
                 const t1 = list
-                  .filter((c) => TIER1.has(c.country))
-                  .reduce((s, c) => s + (c.visitors ?? c.clicks ?? 0), 0);
+                  .filter((c) => TIER1_3.has(c.country) || TIER1_2.has(c.country) || (c.code != null && TIER1_2.has(c.code)))
+                  .reduce((s, c) => s + (c.count ?? c.visitors ?? c.clicks ?? 0), 0);
                 tier1_pct = total > 0 ? Math.round((t1 / total) * 100) : null;
+                accountDetails.push(`Tier1: ${t1}/${total} = ${tier1_pct}%`);
               }
             }
 

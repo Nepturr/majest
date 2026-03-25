@@ -186,20 +186,27 @@ export async function GET(req: NextRequest) {
     igAgg.set(post.instagram_account_id, a);
   }
 
-  // ── 4. GMS overview snapshots (delta = période) ──────────────
-  // On utilise le cumulatif total_clicks et on calcule le delta
-  // entre le dernier snapshot et le snapshot au début de la période.
-  // C'est la même logique que tracking_link_snapshots.
-  const { data: gmsSnaps } = await adminClient
+  // ── 4. GMS overview snapshots ─────────────────────────────────
+  // IMPORTANT: GMS retourne les stats du JOUR (pas un cumulatif all-time).
+  // Chaque snapshot = total_clicks pour cette journée.
+  // → On SOMME les snapshots dans la période pour obtenir le total.
+  // → On récupère aussi le dernier snapshot pour tier1_pct (le plus récent = le plus pertinent).
+  const { data: gmsSnapsInPeriod } = await adminClient
+    .from("gms_overview_snapshots")
+    .select("instagram_account_id, total_clicks, unique_visitors, tier1_pct, collected_at")
+    .in("instagram_account_id", accountIds)
+    .gte("collected_at", startIso)
+    .order("collected_at", { ascending: false });
+
+  // Latest snapshot (for tier1_pct and as fallback when period has no data)
+  const { data: gmsLatestSnaps } = await adminClient
     .from("gms_overview_snapshots")
     .select("instagram_account_id, total_clicks, unique_visitors, tier1_pct, collected_at")
     .in("instagram_account_id", accountIds)
     .order("collected_at", { ascending: false });
 
   const latestGmsSnap = new Map<string, { total_clicks: number | null; unique_visitors: number | null; tier1_pct: number | null }>();
-  const periodStartGmsSnap = new Map<string, { total_clicks: number | null }>();
-
-  for (const row of gmsSnaps ?? []) {
+  for (const row of gmsLatestSnaps ?? []) {
     if (!latestGmsSnap.has(row.instagram_account_id)) {
       latestGmsSnap.set(row.instagram_account_id, {
         total_clicks: row.total_clicks,
@@ -207,9 +214,25 @@ export async function GET(req: NextRequest) {
         tier1_pct: row.tier1_pct,
       });
     }
-    if (!periodStartGmsSnap.has(row.instagram_account_id) && row.collected_at <= startIso) {
-      periodStartGmsSnap.set(row.instagram_account_id, { total_clicks: row.total_clicks });
-    }
+  }
+
+  // Sum snapshots within the period per account
+  interface GmsAgg {
+    totalClicks: number;
+    totalUnique: number;
+    snapCount: number;
+    latestTier1: number | null;
+  }
+  const gmsPeriodAgg = new Map<string, GmsAgg>();
+  for (const row of gmsSnapsInPeriod ?? []) {
+    const a = gmsPeriodAgg.get(row.instagram_account_id) ?? {
+      totalClicks: 0, totalUnique: 0, snapCount: 0, latestTier1: null,
+    };
+    a.totalClicks += row.total_clicks ?? 0;
+    a.totalUnique += row.unique_visitors ?? 0;
+    a.snapCount++;
+    if (a.latestTier1 == null && row.tier1_pct != null) a.latestTier1 = row.tier1_pct;
+    gmsPeriodAgg.set(row.instagram_account_id, a);
   }
 
   // ── 5. Tracking link snapshots (latest + period-start delta) ──
@@ -249,7 +272,7 @@ export async function GET(req: NextRequest) {
     const prevSnap = periodStartSnap.get(account.id);
     const agg = igAgg.get(account.id);
     const gmsLatest = latestGmsSnap.get(account.id);
-    const gmsPrev = periodStartGmsSnap.get(account.id);
+    const gmsPeriod = gmsPeriodAgg.get(account.id);
     const trackLatest = latestTrack.get(account.id);
     const trackPrev = periodStartTrack.get(account.id);
 
@@ -298,17 +321,14 @@ export async function GET(req: NextRequest) {
       },
       gms: account.get_my_social_link_id
         ? (() => {
-            // Delta période : si pas de snapshot antérieur, on affiche le total cumulatif
-            const latestClicks = gmsLatest?.total_clicks ?? null;
-            const prevClicks = gmsPrev?.total_clicks ?? null;
-            const clicksDelta = (latestClicks != null && prevClicks != null)
-              ? Math.max(0, latestClicks - prevClicks)
-              : (latestClicks ?? 0); // 1er snapshot : affiche le total
+            // GMS = données journalières → somme des snapshots dans la période
+            // Si aucun snapshot dans la période, on affiche 0 (pas de données collectées ce jour-là)
+            const hasData = gmsPeriod != null && gmsPeriod.snapCount > 0;
             return {
-              clicks: clicksDelta,
-              unique_visitors: gmsLatest?.unique_visitors ?? 0,
-              tier1_pct: gmsLatest?.tier1_pct ?? null,
-              is_delta: prevClicks != null, // indique si c'est un vrai delta ou un total
+              clicks: hasData ? gmsPeriod!.totalClicks : 0,
+              unique_visitors: hasData ? gmsPeriod!.totalUnique : (gmsLatest?.unique_visitors ?? 0),
+              tier1_pct: gmsPeriod?.latestTier1 ?? gmsLatest?.tier1_pct ?? null,
+              is_delta: hasData,
             };
           })()
         : null,
