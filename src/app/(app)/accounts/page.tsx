@@ -14,7 +14,7 @@ import type {
 import {
   Plus,
   Search,
-  Instagram,
+  AtSign,
   Trash2,
   Pencil,
   X,
@@ -655,7 +655,7 @@ export default function AccountsPage() {
           ) : filtered.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-20 text-center">
               <div className="w-12 h-12 rounded-full bg-accent/10 flex items-center justify-center mb-4">
-                <Instagram className="w-6 h-6 text-accent-light" />
+                <AtSign className="w-6 h-6 text-accent-light" />
               </div>
               <p className="text-sm font-medium">
                 {search ? "No accounts match your search" : "No accounts yet"}
@@ -688,7 +688,7 @@ export default function AccountsPage() {
                         <td className="px-5 py-4">
                           <div className="flex items-center gap-2.5">
                             <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center shrink-0">
-                              <Instagram className="w-4 h-4 text-white" />
+                              <AtSign className="w-4 h-4 text-white" />
                             </div>
                             <div>
                               <p className="font-medium">@{account.instagram_handle}</p>
