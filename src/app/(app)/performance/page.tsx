@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import type { FunnelAccount } from "@/app/api/performance/funnel/route";
 
 // ─────────────────────────────────────────────────────────────
@@ -390,7 +391,13 @@ function AccountRow({ account }: { account: FunnelAccount }) {
           <div className="flex items-center gap-3">
             <IgAvatar url={ig.profile_pic_url} handle={account.instagram_handle} size={32} />
             <div>
-              <p className="text-sm font-medium text-white leading-none">@{account.instagram_handle}</p>
+              <Link
+                href={`/accounts/${account.id}`}
+                onClick={(e) => e.stopPropagation()}
+                className="text-sm font-medium text-white leading-none hover:text-blue-400 transition-colors"
+              >
+                @{account.instagram_handle}
+              </Link>
               {account.model && (
                 <p className="text-xs text-zinc-500 mt-0.5">{account.model.name}</p>
               )}

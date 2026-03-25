@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Header } from "@/components/header";
 import { ProtectedPage } from "@/components/protected-page";
 import type {
@@ -909,6 +910,7 @@ function AccountModal({ account, onClose, onSuccess }: AccountModalProps) {
 
 /* ─── Main Page ─── */
 export default function AccountsPage() {
+  const router = useRouter();
   const [accounts, setAccounts] = useState<InstagramAccount[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -918,12 +920,6 @@ export default function AccountsPage() {
 
   // Sync state per account
   const [syncState, setSyncState] = useState<Record<string, SyncStatus>>({});
-
-  // Drawer state
-  const [drawerAccount, setDrawerAccount] = useState<InstagramAccount | null>(null);
-  const [drawerSnapshots, setDrawerSnapshots] = useState<InstagramAccountSnapshot[]>([]);
-  const [drawerPosts, setDrawerPosts] = useState<InstagramPost[]>([]);
-  const [drawerLoading, setDrawerLoading] = useState(false);
 
   const fetchAccounts = useCallback(async () => {
     setLoading(true);
@@ -975,29 +971,6 @@ export default function AccountsPage() {
     }
   }, [fetchAccounts]);
 
-  /* ── Drawer ── */
-  const openDrawer = useCallback(async (account: InstagramAccount) => {
-    setDrawerAccount(account);
-    setDrawerLoading(true);
-    setDrawerSnapshots([]);
-    setDrawerPosts([]);
-
-    const [snapshotsRes, postsRes] = await Promise.all([
-      fetch(`/api/instagram/${account.id}/snapshots?limit=60`).then((r) => r.json()),
-      fetch(`/api/instagram/${account.id}/posts?limit=30`).then((r) => r.json()),
-    ]);
-
-    setDrawerSnapshots(snapshotsRes.snapshots ?? []);
-    setDrawerPosts(postsRes.posts ?? []);
-    setDrawerLoading(false);
-  }, []);
-
-  // Re-fetch drawer data when sync of the open account completes
-  useEffect(() => {
-    if (drawerAccount && syncState[drawerAccount.id] === "done") {
-      openDrawer(drawerAccount);
-    }
-  }, [syncState, drawerAccount, openDrawer]);
 
   /* ── Handlers ── */
   const handleModalSuccess = useCallback((newAccountId?: string) => {
@@ -1009,7 +982,6 @@ export default function AccountsPage() {
     e.stopPropagation();
     if (!confirm("Delete this account and all its analytics data?")) return;
     setDeletingId(id);
-    if (drawerAccount?.id === id) setDrawerAccount(null);
     await fetch(`/api/admin/instagram-accounts/${id}`, { method: "DELETE" });
     setDeletingId(null);
     fetchAccounts();
@@ -1017,7 +989,6 @@ export default function AccountsPage() {
 
   const handleEdit = (account: InstagramAccount, e?: React.MouseEvent) => {
     e?.stopPropagation();
-    setDrawerAccount(null);
     setEditAccount(account);
     setShowModal(true);
   };
@@ -1100,16 +1071,11 @@ export default function AccountsPage() {
                     const ofAccount = account.of_account as { of_username: string | null; of_avatar_url: string | null } | undefined;
                     const snap = account.latest_snapshot;
                     const sync = syncState[account.id];
-                    const isDrawerOpen = drawerAccount?.id === account.id;
-
                     return (
                       <tr
                         key={account.id}
-                        onClick={() => openDrawer(account)}
-                        className={cn(
-                          "hover:bg-background/40 transition-colors cursor-pointer",
-                          isDrawerOpen && "bg-accent/5 border-l-2 border-accent-light"
-                        )}
+                        onClick={() => router.push(`/accounts/${account.id}`)}
+                        className="hover:bg-background/40 transition-colors cursor-pointer"
                       >
                         {/* Account */}
                         <td className="px-5 py-3.5">
@@ -1245,19 +1211,7 @@ export default function AccountsPage() {
           )}
         </div>
 
-        {/* Account Detail Drawer */}
-        {drawerAccount && (
-          <AccountDrawer
-            account={drawerAccount}
-            snapshots={drawerSnapshots}
-            posts={drawerPosts}
-            loading={drawerLoading}
-            syncStatus={syncState[drawerAccount.id]}
-            onClose={() => setDrawerAccount(null)}
-            onSync={() => startSync(drawerAccount.id)}
-            onEdit={() => handleEdit(drawerAccount)}
-          />
-        )}
+        {/* Drawer supprimé — le clic sur la ligne navigue vers /accounts/[id] */}
 
         {/* Add / Edit Modal */}
         {(showModal || editAccount) && (
