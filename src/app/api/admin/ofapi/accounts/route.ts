@@ -66,12 +66,15 @@ export async function GET() {
     // Handle both { data: [...] } and direct array responses
     const raw = Array.isArray(body) ? body : (body?.data ?? []);
 
-    ofAccounts = raw.map((a: Record<string, unknown>) => ({
-      id: (a.id ?? a.account_id ?? "") as string,
-      username: (a.username ?? a.login ?? "") as string,
-      name: (a.name ?? a.display_name ?? null) as string | null,
-      avatar: (a.avatar ?? a.avatar_url ?? null) as string | null,
-    }));
+    ofAccounts = raw.map((a: Record<string, unknown>) => {
+      const userData = (a.onlyfans_user_data ?? {}) as Record<string, unknown>;
+      return {
+        id: (a.id ?? "") as string,
+        username: (a.onlyfans_username ?? "") as string,
+        name: (a.display_name ?? null) as string | null,
+        avatar: (userData.avatar ?? null) as string | null,
+      };
+    });
   } catch {
     return NextResponse.json(
       { error: "Network error — could not reach OnlyFansAPI." },
