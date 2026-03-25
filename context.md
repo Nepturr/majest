@@ -6,6 +6,17 @@
 - **Le frontend est entièrement en anglais.** Tout texte visible dans l'interface (labels, placeholders, messages d'erreur, titres, boutons) doit être en anglais.
 - Toujours lire le `context.md` et le code existant avant de modifier quoi que ce soit.
 
+## Terminologie métier (à respecter dans tout le code et l'UI)
+
+| Terme | Signification |
+|-------|---------------|
+| **Followers** | Abonnés Instagram (affiché sur les pages Instagram / compte IG) |
+| **Subs** / **Subscribers** | Abonnés OnlyFans (affiché sur les pages OF / performance funnel) |
+| **LTV** | Lifetime Value = `revenue_total / subscribers_total` (revenus cumulatifs OFAPI ÷ nombre de subs OF) |
+| **Views** | Vues des réels Instagram |
+| **Bio Clicks** | Clics sur le lien bio GMS |
+| **Track Clicks** | Clics sur le tracking link OFAPI |
+
 ---
 
 ## Vision

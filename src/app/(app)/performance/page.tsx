@@ -402,19 +402,24 @@ function AccountRow({ account }: { account: FunnelAccount }) {
         <RateBadge rate={subRate} thresholds={[5, 2]} />
       </td>
 
-      {/* LTV */}
+      {/* LTV = revenue_total / subscribers_total */}
       <td className="px-4 py-3 text-right">
-        {track?.revenue_per_subscriber != null ? (
-          <>
-            <p className="text-sm font-semibold text-emerald-400">${track.revenue_per_subscriber.toFixed(2)}</p>
-            <p className="text-[10px] text-zinc-500 mt-0.5">{track.revenue_total != null ? `$${track.revenue_total.toFixed(0)} total` : "rev/sub"}</p>
-          </>
-        ) : (
-          <>
-            <p className="text-sm font-semibold text-zinc-600">—</p>
-            <p className="text-[10px] text-zinc-700 mt-0.5">sync OF req.</p>
-          </>
-        )}
+        {(() => {
+          const ltv = track?.revenue_total != null && track.subscribers_total > 0
+            ? track.revenue_total / track.subscribers_total
+            : null;
+          return ltv != null ? (
+            <>
+              <p className="text-sm font-semibold text-emerald-400">${ltv.toFixed(2)}</p>
+              <p className="text-[10px] text-zinc-500 mt-0.5">${track!.revenue_total!.toFixed(0)} / {track!.subscribers_total} subs</p>
+            </>
+          ) : (
+            <>
+              <p className="text-sm font-semibold text-zinc-600">—</p>
+              <p className="text-[10px] text-zinc-700 mt-0.5">sync OF req.</p>
+            </>
+          );
+        })()}
       </td>
 
       {/* Détails */}
