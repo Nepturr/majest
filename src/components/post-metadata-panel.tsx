@@ -178,42 +178,42 @@ function TextInput({
 // ─────────────────────────────────────────────────────────────
 
 const LIGHTING_OPTIONS = [
-  { value: "natural_day", label: "Naturel jour" },
+  { value: "natural_day", label: "Natural day" },
   { value: "golden_hour", label: "Golden hour" },
   { value: "studio", label: "Studio" },
-  { value: "led_color", label: "LED colorées" },
-  { value: "indoor_lamp", label: "Intérieur lampe" },
-  { value: "night", label: "Nuit" },
+  { value: "led_color", label: "Colored LEDs" },
+  { value: "indoor_lamp", label: "Indoor lamp" },
+  { value: "night", label: "Night" },
 ] as const;
 
 const SHOT_TYPE_OPTIONS = [
-  { value: "tight_face", label: "Visage serré" },
-  { value: "bust", label: "Buste" },
-  { value: "mid_body", label: "Mi-corps" },
-  { value: "full_body", label: "Corps entier" },
-  { value: "low_angle", label: "Contre-plongée" },
-  { value: "high_angle", label: "Plongée" },
+  { value: "tight_face", label: "Tight face" },
+  { value: "bust", label: "Bust" },
+  { value: "mid_body", label: "Mid-body" },
+  { value: "full_body", label: "Full body" },
+  { value: "low_angle", label: "Low angle" },
+  { value: "high_angle", label: "High angle" },
 ] as const;
 
 const CONTRAST_OPTIONS = [
-  { value: "low", label: "Faible" },
-  { value: "medium", label: "Moyen" },
-  { value: "high", label: "Fort" },
+  { value: "low", label: "Low" },
+  { value: "medium", label: "Medium" },
+  { value: "high", label: "High" },
 ] as const;
 
 const HOOK_TYPE_OPTIONS = [
-  { value: "text_overlay", label: "Texte overlay" },
-  { value: "sound_music", label: "Son/Musique" },
-  { value: "visual_surprise", label: "Visuel surprise" },
-  { value: "pov_text", label: "POV textuel" },
-  { value: "direct_transition", label: "Transition directe" },
+  { value: "text_overlay", label: "Text overlay" },
+  { value: "sound_music", label: "Sound/Music" },
+  { value: "visual_surprise", label: "Visual surprise" },
+  { value: "pov_text", label: "Text POV" },
+  { value: "direct_transition", label: "Direct transition" },
 ] as const;
 
 const ENERGY_OPTIONS = [
-  { value: "calm", label: "Calme" },
-  { value: "neutral", label: "Neutre" },
-  { value: "dynamic", label: "Dynamique" },
-  { value: "very_dynamic", label: "Très dynamique" },
+  { value: "calm", label: "Calm" },
+  { value: "neutral", label: "Neutral" },
+  { value: "dynamic", label: "Dynamic" },
+  { value: "very_dynamic", label: "Very dynamic" },
 ] as const;
 
 const PACE_OPTIONS = [
@@ -223,11 +223,11 @@ const PACE_OPTIONS = [
 ] as const;
 
 const AUDIO_TYPE_OPTIONS = [
-  { value: "trending", label: "Trending son" },
-  { value: "original", label: "Musique originale" },
-  { value: "voiceover", label: "Voix off" },
-  { value: "no_audio", label: "Pas d'audio" },
-  { value: "viral_reused", label: "Son viral réutilisé" },
+  { value: "trending", label: "Trending sound" },
+  { value: "original", label: "Original music" },
+  { value: "voiceover", label: "Voiceover" },
+  { value: "no_audio", label: "No audio" },
+  { value: "viral_reused", label: "Reused viral sound" },
 ] as const;
 
 export function PostMetadataPanel({
@@ -325,7 +325,7 @@ export function PostMetadataPanel({
               {saving && <Loader2 className="w-3.5 h-3.5 text-zinc-500 animate-spin" />}
               {saved && !saving && (
                 <span className="flex items-center gap-1 text-xs text-emerald-400">
-                  <Check className="w-3 h-3" /> Sauvegardé
+                  <Check className="w-3 h-3" /> Saved
                 </span>
               )}
             </div>
@@ -336,7 +336,7 @@ export function PostMetadataPanel({
               target="_blank"
               rel="noopener noreferrer"
               className="text-zinc-500 hover:text-white transition-colors p-1.5 rounded-lg hover:bg-zinc-800"
-              title="Voir sur Instagram"
+              title="View on Instagram"
             >
               <ExternalLink className="w-4 h-4" />
             </a>
@@ -369,9 +369,9 @@ export function PostMetadataPanel({
             )}
             <div className="grid grid-cols-2 gap-1.5">
               {[
-                { label: "Vues", value: fmt(views) },
+                { label: "Views", value: fmt(views) },
                 { label: "Likes", value: fmt(snap?.likes_count) },
-                { label: "Commentaires", value: fmt(snap?.comments_count) },
+                { label: "Comments", value: fmt(snap?.comments_count) },
                 {
                   label: "ER",
                   value: views && snap?.likes_count != null
@@ -391,35 +391,35 @@ export function PostMetadataPanel({
         {/* Form (scrollable) */}
         {loading ? (
           <div className="flex-1 flex items-center justify-center text-zinc-600 text-sm gap-2">
-            <Loader2 className="w-4 h-4 animate-spin" /> Chargement…
+            <Loader2 className="w-4 h-4 animate-spin" /> Loading…
           </div>
         ) : (
           <div className="flex-1 overflow-y-auto px-5 py-5">
 
             {/* ── VISUEL ───────────────────────────────── */}
-            <Section title="Visuel">
-              <Field label="Tenue">
+            <Section title="Visual">
+              <Field label="Outfit">
                 <TextInput
                   value={meta.outfit ?? ""}
                   onChange={(v) => update("outfit", v)}
-                  placeholder="Ex : robe noire, crop top blanc…"
+                  placeholder="E.g.: black dress, white crop top…"
                 />
               </Field>
-              <Field label="Fond / décor">
+              <Field label="Background / setting">
                 <TextInput
                   value={meta.backdrop ?? ""}
                   onChange={(v) => update("backdrop", v)}
-                  placeholder="Ex : chambre blanche, extérieur parc…"
+                  placeholder="E.g.: white room, outdoor park…"
                 />
               </Field>
-              <Field label="Éclairage">
+              <Field label="Lighting">
                 <PillGroup
                   options={LIGHTING_OPTIONS}
                   value={meta.lighting as typeof LIGHTING_OPTIONS[number]["value"] | null}
                   onChange={(v) => update("lighting", v)}
                 />
               </Field>
-              <Field label="Plan">
+              <Field label="Shot type">
                 <PillGroup
                   options={SHOT_TYPE_OPTIONS}
                   value={meta.shot_type as typeof SHOT_TYPE_OPTIONS[number]["value"] | null}
@@ -427,7 +427,7 @@ export function PostMetadataPanel({
                 />
               </Field>
               <div className="grid grid-cols-2 gap-3">
-                <Field label="Durée">
+                <Field label="Duration">
                   <div className="flex items-center gap-2 bg-zinc-800/40 border border-zinc-800 rounded-lg px-3 py-2 h-[38px]">
                     {meta.duration_seconds != null ? (
                       <>
@@ -439,11 +439,11 @@ export function PostMetadataPanel({
                         <span className="ml-auto text-[9px] text-zinc-600 bg-zinc-800 border border-zinc-700 rounded px-1.5 py-0.5 uppercase tracking-wide">API</span>
                       </>
                     ) : (
-                      <span className="text-xs text-zinc-600 italic">Sync Réels requis</span>
+                      <span className="text-xs text-zinc-600 italic">Reels sync required</span>
                     )}
                   </div>
                 </Field>
-                <Field label="Contraste modèle/fond">
+                <Field label="Model/background contrast">
                   <PillGroup
                     options={CONTRAST_OPTIONS}
                     value={meta.contrast_level as typeof CONTRAST_OPTIONS[number]["value"] | null}
@@ -455,41 +455,41 @@ export function PostMetadataPanel({
 
             {/* ── HOOK ─────────────────────────────────── */}
             <Section title="Hook (0–2s)">
-              <Field label="Type de hook">
+              <Field label="Hook type">
                 <PillGroup
                   options={HOOK_TYPE_OPTIONS}
                   value={meta.hook_type as typeof HOOK_TYPE_OPTIONS[number]["value"] | null}
                   onChange={(v) => update("hook_type", v)}
                 />
               </Field>
-              <Field label="Description du hook">
+              <Field label="Hook description">
                 <TextArea
                   value={meta.hook_description ?? ""}
                   onChange={(v) => update("hook_description", v)}
-                  placeholder="Ce qui se passe exactement dans les 2 premières secondes…"
+                  placeholder="What happens exactly in the first 2 seconds…"
                   rows={2}
                 />
               </Field>
             </Section>
 
             {/* ── CONTENU ──────────────────────────────── */}
-            <Section title="Contenu (Meat)">
+            <Section title="Content (Meat)">
               <Field label="Description">
                 <TextArea
                   value={meta.content_description ?? ""}
                   onChange={(v) => update("content_description", v)}
-                  placeholder="Ce qui se passe dans la vidéo…"
+                  placeholder="What happens in the video…"
                   rows={3}
                 />
               </Field>
-              <Field label="Énergie">
+              <Field label="Energy">
                 <PillGroup
                   options={ENERGY_OPTIONS}
                   value={meta.energy_level as typeof ENERGY_OPTIONS[number]["value"] | null}
                   onChange={(v) => update("energy_level", v)}
                 />
               </Field>
-              <Field label="Rythme de montage">
+              <Field label="Editing pace">
                 <PillGroup
                   options={PACE_OPTIONS}
                   value={meta.editing_pace as typeof PACE_OPTIONS[number]["value"] | null}
@@ -500,14 +500,14 @@ export function PostMetadataPanel({
 
             {/* ── AUDIO ────────────────────────────────── */}
             <Section title="Audio">
-              <Field label="Nom de la musique / son">
+              <Field label="Music / sound name">
                 <TextInput
                   value={meta.music_name ?? ""}
                   onChange={(v) => update("music_name", v)}
-                  placeholder="Ex : Flowers – Miley Cyrus, son trending #xyz…"
+                  placeholder="E.g.: Flowers – Miley Cyrus, trending sound #xyz…"
                 />
               </Field>
-              <Field label="Type d'audio">
+              <Field label="Audio type">
                 <PillGroup
                   options={AUDIO_TYPE_OPTIONS}
                   value={meta.audio_type as typeof AUDIO_TYPE_OPTIONS[number]["value"] | null}
@@ -517,12 +517,12 @@ export function PostMetadataPanel({
             </Section>
 
             {/* ── VARIABLE TESTÉE ──────────────────────── */}
-            <Section title="Variable testée" accent>
+            <Section title="Tested variable" accent>
               <Field label="">
                 <TextArea
                   value={meta.tested_variable ?? ""}
                   onChange={(v) => update("tested_variable", v)}
-                  placeholder='Ex : "Même hook que F2 mais décor extérieur au lieu de chambre" — Ce champ est clé pour corréler créatif ↔ perfs.'
+                  placeholder='E.g.: "Same hook as F2 but outdoor setting instead of room" — This field is key to correlate creative ↔ performance.'
                   rows={3}
                   accent
                 />
@@ -530,11 +530,11 @@ export function PostMetadataPanel({
             </Section>
 
             {/* ── NOTES ────────────────────────────────── */}
-            <Section title="Notes libres">
+            <Section title="Free notes">
               <TextArea
                 value={meta.notes ?? ""}
                 onChange={(v) => update("notes", v)}
-                placeholder="Observations, idées, contexte de tournage…"
+                placeholder="Observations, ideas, shooting context…"
                 rows={3}
               />
             </Section>
@@ -544,16 +544,15 @@ export function PostMetadataPanel({
         )}
 
         {/* Footer save status */}
-        <div className="flex items-center justify-between px-5 py-3 border-t border-zinc-800 flex-shrink-0 text-xs text-zinc-600">
-          <span>Sauvegarde automatique — 1.5s après la dernière modification</span>
+        <div className="flex items-center justify-end px-5 py-3 border-t border-zinc-800 flex-shrink-0 text-xs text-zinc-600">
           {saving && (
             <span className="flex items-center gap-1 text-zinc-500">
-              <Loader2 className="w-3 h-3 animate-spin" /> Sauvegarde…
+              <Loader2 className="w-3 h-3 animate-spin" /> Saving…
             </span>
           )}
           {saved && !saving && (
             <span className="flex items-center gap-1 text-emerald-500">
-              <Check className="w-3 h-3" /> Sauvegardé
+              <Check className="w-3 h-3" /> Saved
             </span>
           )}
         </div>
