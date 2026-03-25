@@ -30,29 +30,31 @@ export interface FunnelAccount {
     is_delta: boolean; // true = delta période, false = total cumulatif (1er snapshot)
   } | null;
   tracking: {
-    clicks_delta: number;
-    subscribers_delta: number;
+    clicks_delta: number | null;
+    subscribers_delta: number | null;
     clicks_total: number;
     subscribers_total: number;
+    is_total: boolean; // true = cumul all-time (pas de snapshot antérieur ou période inception)
   } | null;
 }
 
-type Period = "today" | "yesterday" | "week" | "month";
+type Period = "today" | "yesterday" | "week" | "month" | "inception";
 
 function getPeriodRange(period: Period): { start: Date; end: Date } {
   const now = new Date();
-  // Normalize to UTC midnight
   const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
   const yesterday = new Date(today); yesterday.setUTCDate(today.getUTCDate() - 1);
 
   switch (period) {
+    case "inception":
+      // Epoch : retourne forcément tous les snapshots
+      return { start: new Date(0), end: now };
     case "today":
       return { start: today, end: now };
     case "yesterday":
       return { start: yesterday, end: today };
     case "week": {
-      // Monday of current UTC week
-      const dayOfWeek = today.getUTCDay(); // 0=Sun
+      const dayOfWeek = today.getUTCDay();
       const diff = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
       const monday = new Date(today);
       monday.setUTCDate(today.getUTCDate() + diff);
@@ -68,7 +70,7 @@ function getPeriodRange(period: Period): { start: Date; end: Date } {
 /**
  * GET /api/performance/funnel?period=week
  * Reads ALL data from DB — no external API calls.
- * period: today | yesterday | week (default) | month
+ * period: today | yesterday | week (default) | month | inception
  */
 export async function GET(req: NextRequest) {
   const supabase = await createClient();
@@ -252,17 +254,27 @@ export async function GET(req: NextRequest) {
     const trackPrev = periodStartTrack.get(account.id);
 
     const followersCurrent = snap?.followers_count ?? null;
+    const inception = period === "inception";
+
     const followersDelta = (followersCurrent != null && prevSnap?.followers_count != null)
       ? followersCurrent - prevSnap.followers_count
       : null;
 
-    const trackClicksDelta = (trackLatest && trackPrev)
-      ? Math.max(0, trackLatest.clicks_count - trackPrev.clicks_count)
-      : (trackLatest ? 0 : null);
+    // Tracking : si pas de snapshot antérieur, on affiche le total (pas 0)
+    const hasPrevTrack = !!(trackLatest && trackPrev);
+    const trackClicksDelta = inception || !hasPrevTrack
+      ? (trackLatest?.clicks_count ?? null)   // total cumulatif
+      : Math.max(0, trackLatest!.clicks_count - trackPrev!.clicks_count);
 
-    const trackSubsDelta = (trackLatest && trackPrev)
-      ? Math.max(0, trackLatest.subscribers_count - trackPrev.subscribers_count)
-      : (trackLatest ? 0 : null);
+    const trackSubsDelta = inception || !hasPrevTrack
+      ? (trackLatest?.subscribers_count ?? null)
+      : Math.max(0, trackLatest!.subscribers_count - trackPrev!.subscribers_count);
+
+    // Views : fallback to total when no period-start data
+    const hasViewsDelta = !inception && agg?.hasViewData && agg.viewsAtStart > 0;
+    const viewsDeltaVal = hasViewsDelta
+      ? Math.max(0, agg!.viewsCurrent - agg!.viewsAtStart)
+      : (agg?.hasViewData ? agg.viewsCurrent : null);
 
     return {
       id: account.id,
@@ -276,7 +288,7 @@ export async function GET(req: NextRequest) {
         followers_current: followersCurrent,
         followers_delta: followersDelta,
         views_current: agg?.hasViewData ? agg.viewsCurrent : null,
-        views_delta: agg?.hasViewData ? Math.max(0, agg.viewsCurrent - agg.viewsAtStart) : null,
+        views_delta: viewsDeltaVal,
         profile_pic_url: snap?.profile_pic_url ?? null,
         avg_likes: agg && agg.cntL > 0 ? Math.round(agg.sumL / agg.cntL) : null,
         avg_comments: agg && agg.cntC > 0 ? Math.round(agg.sumC / agg.cntC) : null,
@@ -302,10 +314,11 @@ export async function GET(req: NextRequest) {
         : null,
       tracking: trackLatest != null
         ? {
-            clicks_delta: trackClicksDelta ?? 0,
-            subscribers_delta: trackSubsDelta ?? 0,
+            clicks_delta: trackClicksDelta,
+            subscribers_delta: trackSubsDelta,
             clicks_total: trackLatest.clicks_count,
             subscribers_total: trackLatest.subscribers_count,
+            is_total: inception || !hasPrevTrack,
           }
         : null,
     };

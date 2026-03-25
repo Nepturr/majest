@@ -6,7 +6,7 @@ import type { FunnelAccount } from "@/app/api/performance/funnel/route";
 // ─────────────────────────────────────────────────────────────
 // Types
 // ─────────────────────────────────────────────────────────────
-type Period = "today" | "yesterday" | "week" | "month";
+type Period = "today" | "yesterday" | "week" | "month" | "inception";
 
 interface Model { id: string; name: string; avatar_url: string | null; }
 
@@ -419,7 +419,7 @@ function AccountRow({ account }: { account: FunnelAccount }) {
           <div className="mt-0.5 flex flex-col items-end gap-0.5">
             <RateBadge rate={bioCtr} thresholds={[3, 1]} />
             {gms && !gms.is_delta && (
-              <span className="text-[9px] text-zinc-600">total</span>
+              <span className="text-[9px] text-amber-600/70">cumul</span>
             )}
           </div>
         </td>
@@ -427,16 +427,22 @@ function AccountRow({ account }: { account: FunnelAccount }) {
         {/* Track clicks */}
         <td className="px-4 py-3 text-right">
           <p className="text-sm font-semibold text-white">{fmt(track?.clicks_delta)}</p>
-          <div className="mt-0.5">
+          <div className="mt-0.5 flex flex-col items-end gap-0.5">
             <RateBadge rate={trackCtr} thresholds={[30, 10]} />
+            {track?.is_total && (
+              <span className="text-[9px] text-amber-600/70">cumul</span>
+            )}
           </div>
         </td>
 
         {/* Subscribers */}
         <td className="px-4 py-3 text-right">
           <p className="text-sm font-semibold text-white">{fmt(track?.subscribers_delta)}</p>
-          <div className="mt-0.5">
+          <div className="mt-0.5 flex flex-col items-end gap-0.5">
             <RateBadge rate={subRate} thresholds={[5, 2]} />
+            {track?.is_total && (
+              <span className="text-[9px] text-amber-600/70">cumul</span>
+            )}
           </div>
         </td>
 
@@ -526,6 +532,7 @@ const PERIOD_LABELS: Record<Period, string> = {
   yesterday: "Yesterday",
   week: "This week",
   month: "This month",
+  inception: "Depuis inception",
 };
 
 export default function PerformancePage() {
@@ -587,6 +594,10 @@ export default function PerformancePage() {
   const totalBioClicks = accounts.reduce((s, a) => s + (a.gms?.clicks ?? 0), 0);
   const totalTrackClicks = accounts.reduce((s, a) => s + (a.tracking?.clicks_delta ?? 0), 0);
   const totalSubs = accounts.reduce((s, a) => s + (a.tracking?.subscribers_delta ?? 0), 0);
+  // Is any metric showing a total rather than a period delta?
+  const gmsTotalMode = accounts.some((a) => a.gms && !a.gms.is_delta);
+  const trackTotalMode = accounts.some((a) => a.tracking?.is_total);
+  const isInception = period === "inception";
 
   // Use views as top of funnel if available, otherwise followers
   const funnelTop = hasViewData ? totalViews : totalFollowers;
@@ -637,7 +648,7 @@ export default function PerformancePage() {
 
             {/* Period selector */}
             <div className="flex items-center bg-zinc-900 border border-zinc-800 rounded-xl p-1 gap-0.5">
-              {(["yesterday", "today", "week", "month"] as Period[]).map((p) => (
+              {(["yesterday", "today", "week", "month", "inception"] as Period[]).map((p) => (
                 <button
                   key={p}
                   onClick={() => setPeriod(p)}
@@ -724,9 +735,17 @@ export default function PerformancePage() {
                 }
               />
               <KpiCard
-                label="Bio Clicks"
+                label={gmsTotalMode && !isInception ? "Bio Clicks (total)" : "Bio Clicks"}
                 value={fmt(totalBioClicks)}
-                sub={globalBioCtr != null ? `CTR ${globalBioCtr.toFixed(1)}%` : "Pas de données GMS"}
+                sub={
+                  totalBioClicks === 0
+                    ? "Lance une collecte →"
+                    : globalBioCtr != null
+                      ? `CTR ${globalBioCtr.toFixed(1)}%`
+                      : gmsTotalMode && !isInception
+                        ? "Total cumulatif — 2e collecte pour le delta"
+                        : undefined
+                }
                 color="bg-sky-500/10 text-sky-400"
                 icon={
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-5 h-5">
@@ -736,9 +755,17 @@ export default function PerformancePage() {
                 }
               />
               <KpiCard
-                label="Tracking Clicks"
+                label={trackTotalMode && !isInception ? "Track Clicks (total)" : "Track Clicks"}
                 value={fmt(totalTrackClicks)}
-                sub={globalTrackCtr != null ? `CTR ${globalTrackCtr.toFixed(1)}%` : "Pas de données OFAPI"}
+                sub={
+                  totalTrackClicks === 0 && !trackTotalMode
+                    ? "Lance une collecte →"
+                    : globalTrackCtr != null
+                      ? `CTR ${globalTrackCtr.toFixed(1)}%`
+                      : trackTotalMode && !isInception
+                        ? "Total cumulatif — 2e collecte pour le delta"
+                        : undefined
+                }
                 color="bg-violet-500/10 text-violet-400"
                 icon={
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-5 h-5">
@@ -747,9 +774,17 @@ export default function PerformancePage() {
                 }
               />
               <KpiCard
-                label="New Subscribers"
+                label={trackTotalMode && !isInception ? "Subscribers (total)" : "Subscribers"}
                 value={fmt(totalSubs)}
-                sub={globalSubRate != null ? `Conv. ${globalSubRate.toFixed(1)}%` : "Pas de données OFAPI"}
+                sub={
+                  totalSubs === 0 && !trackTotalMode
+                    ? "Lance une collecte →"
+                    : globalSubRate != null
+                      ? `Conv. ${globalSubRate.toFixed(1)}%`
+                      : trackTotalMode && !isInception
+                        ? "Total cumulatif — 2e collecte pour le delta"
+                        : undefined
+                }
                 color="bg-emerald-500/10 text-emerald-400"
                 icon={
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-5 h-5">
