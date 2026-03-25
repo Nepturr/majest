@@ -235,9 +235,9 @@ export async function GET() {
           let nextUrl: string | null = `https://app.onlyfansapi.com/api/${ofapiId}/tracking-links?limit=100`;
 
           while (nextUrl) {
-            const res = await fetch(nextUrl, { headers: { Authorization: `Bearer ${ofapiKey}` } });
-            if (!res.ok) break;
-            const body = await res.json();
+            const pageRes: Response = await fetch(nextUrl, { headers: { Authorization: `Bearer ${ofapiKey}` } });
+            if (!pageRes.ok) break;
+            const body = await pageRes.json();
             allLinks.push(...(body.data?.list ?? []));
             nextUrl = body.data?.hasMore && body._pagination?.next_page ? body._pagination.next_page : null;
           }
