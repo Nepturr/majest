@@ -243,7 +243,7 @@ async function upsertPosts(
           caption: post.caption ?? null,
           thumbnail_url: post.displayUrl ?? null,
           posted_at: post.timestamp ?? null,
-          video_duration: post.videoDuration ?? null,
+          video_duration: post.videoDuration != null ? Math.round(post.videoDuration) : null,
           last_seen_at: new Date().toISOString(),
           is_active: true,
         },
