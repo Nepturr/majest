@@ -349,7 +349,7 @@ function AccountRow({ account }: { account: FunnelAccount }) {
   const funnelBase = ig.views_delta ?? followers;
   const bioCtr = gms && funnelBase ? (gms.clicks / funnelBase) * 100 : null;
   const trackCtr = gms && gms.clicks > 0 ? ((track?.clicks_delta ?? 0) / gms.clicks) * 100 : null;
-  const subRate = track && track.clicks_delta > 0 ? (track.subscribers_delta / track.clicks_delta) * 100 : null;
+  const subRate = track && (track.clicks_delta ?? 0) > 0 ? ((track.subscribers_delta ?? 0) / track.clicks_delta!) * 100 : null;
 
   const handleOpen = async () => {
     const newOpen = !open;
