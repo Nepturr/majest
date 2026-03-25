@@ -74,7 +74,7 @@ function PillGroup<T extends string>({
   value,
   onChange,
 }: {
-  options: { value: T; label: string }[];
+  options: readonly { value: T; label: string }[];
   value: T | null;
   onChange: (v: T | null) => void;
 }) {
