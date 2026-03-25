@@ -3,9 +3,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
-  ArrowLeft, Heart, MessageCircle, Eye, Play, RefreshCw,
-  ExternalLink, TrendingUp, Users, Film, Image as ImageIcon,
-  Layers, BarChart2, PenLine,
+  ArrowLeft, Heart, MessageCircle, Eye, RefreshCw,
+  ExternalLink, TrendingUp, Film, Image as ImageIcon,
+  Layers, Play, Users, PenLine,
 } from "lucide-react";
 import { PostMetadataPanel, hasMetadata } from "@/components/post-metadata-panel";
 import type { PostForPanel, PostMetadata } from "@/components/post-metadata-panel";
@@ -13,6 +13,10 @@ import type { PostForPanel, PostMetadata } from "@/components/post-metadata-pane
 // ─────────────────────────────────────────────────────────────
 // Types
 // ─────────────────────────────────────────────────────────────
+type Period = "today" | "week" | "month" | "inception";
+type SortKey = "views" | "likes" | "engagement" | "recent" | "comments";
+type TypeFilter = "all" | "Reel" | "Video" | "Image" | "Sidecar";
+
 interface PostSnapshot {
   likes_count: number | null;
   comments_count: number | null;
@@ -32,6 +36,8 @@ interface Post {
   is_active: boolean;
   last_seen_at: string | null;
   latest_snapshot: PostSnapshot | null;
+  views_delta: number | null;
+  has_period_start: boolean;
 }
 
 interface AccountSnap {
@@ -50,14 +56,6 @@ interface Account {
   latest_snapshot?: AccountSnap | null;
   model?: { name: string; avatar_url: string | null } | null;
 }
-
-type SortKey = "recent" | "views" | "likes" | "engagement" | "comments";
-
-function proxyImg(url: string | null | undefined): string | null {
-  if (!url) return null;
-  return `/api/proxy/image?url=${encodeURIComponent(url)}`;
-}
-type TypeFilter = "all" | "Reel" | "Video" | "Image" | "Sidecar";
 
 // ─────────────────────────────────────────────────────────────
 // Helpers
@@ -85,13 +83,17 @@ function relativeTime(iso: string | null): string {
   const h = Math.floor(diff / 3600000);
   const m = Math.floor(diff / 60000);
   if (d > 30) return `${Math.floor(d / 30)}mo`;
-  if (d > 0) return `${d}d`;
+  if (d > 0) return `${d}j`;
   if (h > 0) return `${h}h`;
   return `${m}m`;
 }
 
-function PostTypeIcon({ type }: { type: Post["post_type"] }) {
-  const cls = "w-3 h-3";
+function proxyImg(url: string | null | undefined): string | null {
+  if (!url) return null;
+  return `/api/proxy/image?url=${encodeURIComponent(url)}`;
+}
+
+function PostTypeIcon({ type, cls = "w-3 h-3" }: { type: Post["post_type"]; cls?: string }) {
   if (type === "Reel") return <Film className={cls} />;
   if (type === "Video") return <Play className={cls} />;
   if (type === "Sidecar") return <Layers className={cls} />;
@@ -101,14 +103,13 @@ function PostTypeIcon({ type }: { type: Post["post_type"] }) {
 // ─────────────────────────────────────────────────────────────
 // IgAvatar
 // ─────────────────────────────────────────────────────────────
-function IgAvatar({ url, handle, size = 80 }: { url: string | null; handle: string; size?: number }) {
+function IgAvatar({ url, handle, size = 64 }: { url: string | null; handle: string; size?: number }) {
   const [err, setErr] = useState(false);
+  const initials = handle.slice(0, 2).toUpperCase();
   if (!url || err) {
     return (
-      <div
-        style={{ width: size, height: size, borderRadius: "50%", background: "linear-gradient(135deg,#9333ea,#db2777)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: size * 0.35, color: "#fff", fontWeight: 700, flexShrink: 0 }}
-      >
-        {handle.slice(0, 2).toUpperCase()}
+      <div style={{ width: size, height: size, borderRadius: "50%", background: "linear-gradient(135deg,#9333ea,#db2777)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: size * 0.35, color: "#fff", fontWeight: 700, flexShrink: 0 }}>
+        {initials}
       </div>
     );
   }
@@ -118,9 +119,9 @@ function IgAvatar({ url, handle, size = 80 }: { url: string | null; handle: stri
 }
 
 // ─────────────────────────────────────────────────────────────
-// Post Card — click → metadata panel, not IG
+// ReelCard — thumbnail + caption + metrics
 // ─────────────────────────────────────────────────────────────
-function PostCard({
+function ReelCard({
   post,
   metaMap,
   onOpenMeta,
@@ -129,9 +130,8 @@ function PostCard({
   metaMap: Map<string, PostMetadata>;
   onOpenMeta: (post: Post) => void;
 }) {
-  const [hover, setHover] = useState(false);
   const snap = post.latest_snapshot;
-  const views = snap?.views_count ?? snap?.plays_count;
+  const views = post.views_delta ?? snap?.views_count ?? snap?.plays_count;
   const er = engagementRate(post);
   const stale = post.last_seen_at
     ? Date.now() - new Date(post.last_seen_at).getTime() > 14 * 86400000
@@ -141,99 +141,110 @@ function PostCard({
 
   return (
     <div
-      className={`relative rounded-lg overflow-hidden bg-zinc-800 border transition-colors cursor-pointer ${
+      className={`group flex flex-col rounded-xl overflow-hidden bg-zinc-900 border transition-all cursor-pointer ${
         inactive
           ? "border-zinc-800 opacity-40 grayscale"
-          : hover
-            ? "border-blue-500/60"
-            : "border-zinc-700"
+          : "border-zinc-800 hover:border-blue-500/50 hover:shadow-lg hover:shadow-blue-500/5"
       }`}
-      onMouseEnter={() => setHover(true)}
-      onMouseLeave={() => setHover(false)}
       onClick={() => onOpenMeta(post)}
-      style={{ aspectRatio: "9/16" }}
     >
       {/* Thumbnail */}
-      {post.thumbnail_url ? (
-        <img src={proxyImg(post.thumbnail_url)!} alt="" className="w-full h-full object-cover" />
-      ) : (
-        <div className="w-full h-full flex items-center justify-center bg-zinc-800">
-          <PostTypeIcon type={post.post_type} />
-        </div>
-      )}
+      <div className="relative overflow-hidden" style={{ aspectRatio: "9/16" }}>
+        {post.thumbnail_url ? (
+          <img
+            src={proxyImg(post.thumbnail_url)!}
+            alt=""
+            className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+          />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center bg-zinc-800 text-zinc-600">
+            <PostTypeIcon type={post.post_type} cls="w-8 h-8" />
+          </div>
+        )}
 
-      {/* Type badge */}
-      <div className="absolute top-2 left-2 flex items-center gap-1 bg-black/60 backdrop-blur-sm rounded px-1.5 py-0.5 text-white text-[10px] font-medium">
-        <PostTypeIcon type={post.post_type} />
-        {post.post_type}
+        {/* Top badges */}
+        <div className="absolute top-0 left-0 right-0 flex items-start justify-between p-2">
+          <div className="flex items-center gap-1 bg-black/60 backdrop-blur-sm rounded-full px-2 py-1 text-white text-[10px] font-medium">
+            <PostTypeIcon type={post.post_type} />
+            <span>{post.post_type}</span>
+          </div>
+          <div className="flex items-center gap-1">
+            {hasMeta && (
+              <div className="w-2 h-2 rounded-full bg-emerald-400 ring-1 ring-black/50" title="Metadata remplie" />
+            )}
+            {inactive && (
+              <span className="bg-orange-700/80 rounded-full px-1.5 py-0.5 text-[9px] text-white">
+                {!post.is_active ? "supprimé" : "stale"}
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* Views always visible at bottom */}
+        {views != null && (
+          <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 via-black/30 to-transparent px-2.5 pt-6 pb-2">
+            <div className="flex items-center gap-1 text-white text-xs font-semibold">
+              <Eye className="w-3 h-3 opacity-80" />
+              {fmt(views)}
+            </div>
+          </div>
+        )}
+
+        {/* Hover overlay */}
+        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/50 transition-all flex items-center justify-center opacity-0 group-hover:opacity-100">
+          <div className="flex flex-col items-center gap-1.5 text-white text-xs">
+            <PenLine className="w-5 h-5" />
+            <span className="font-medium">Analyser</span>
+          </div>
+        </div>
+
+        {/* IG link */}
+        <a
+          href={post.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={(e) => e.stopPropagation()}
+          className="absolute bottom-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity text-zinc-400 hover:text-white"
+          title="Voir sur Instagram"
+        >
+          <ExternalLink className="w-3.5 h-3.5" />
+        </a>
       </div>
 
-      {/* Metadata indicator dot */}
-      {hasMeta && (
-        <div className="absolute top-2 right-2 w-2 h-2 rounded-full bg-emerald-400 ring-1 ring-zinc-900" title="Metadata remplie" />
-      )}
+      {/* Info below thumbnail */}
+      <div className="p-3 flex flex-col gap-2 flex-1">
+        {/* Caption */}
+        {post.caption && (
+          <p className="text-xs text-zinc-400 leading-relaxed line-clamp-3">
+            {post.caption}
+          </p>
+        )}
+        {!post.caption && (
+          <p className="text-xs text-zinc-700 italic">Pas de description</p>
+        )}
 
-      {/* Stale / inactive badge */}
-      {inactive && (
-        <div className="absolute top-2 right-2 bg-orange-600/80 rounded px-1.5 py-0.5 text-[9px] text-white font-medium">
-          {!post.is_active ? "supprimé" : "stale"}
-        </div>
-      )}
-
-      {/* Hover overlay with metrics + open IG link */}
-      {hover && (
-        <div className="absolute inset-0 bg-black/75 flex flex-col justify-end p-3 gap-1.5">
-          {views != null && (
-            <div className="flex items-center gap-1.5 text-white text-xs">
-              <Eye className="w-3 h-3" />
-              <span className="font-semibold">{fmt(views)}</span>
-            </div>
-          )}
+        {/* Metrics row */}
+        <div className="flex items-center gap-3 text-[11px] text-zinc-500 mt-auto">
           {snap?.likes_count != null && (
-            <div className="flex items-center gap-1.5 text-white text-xs">
-              <Heart className="w-3 h-3" />
-              <span>{fmt(snap.likes_count)}</span>
-            </div>
+            <span className="flex items-center gap-0.5">
+              <Heart className="w-3 h-3" /> {fmt(snap.likes_count)}
+            </span>
           )}
           {snap?.comments_count != null && (
-            <div className="flex items-center gap-1.5 text-white text-xs">
-              <MessageCircle className="w-3 h-3" />
-              <span>{fmt(snap.comments_count)}</span>
-            </div>
+            <span className="flex items-center gap-0.5">
+              <MessageCircle className="w-3 h-3" /> {fmt(snap.comments_count)}
+            </span>
           )}
           {er != null && (
-            <div className="flex items-center gap-1.5 text-emerald-400 text-xs">
-              <TrendingUp className="w-3 h-3" />
-              <span>{er.toFixed(1)}% ER</span>
-            </div>
+            <span className="flex items-center gap-0.5 text-emerald-500/80">
+              <TrendingUp className="w-3 h-3" /> {er.toFixed(1)}%
+            </span>
           )}
-          <div className="flex items-center gap-1.5 mt-1 pt-1 border-t border-white/10">
-            <div className="flex items-center gap-1 text-blue-400 text-[10px] font-medium">
-              <PenLine className="w-3 h-3" />
-              Analyser
-            </div>
-            <a
-              href={post.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              onClick={(e) => e.stopPropagation()}
-              className="ml-auto text-zinc-400 hover:text-white text-[10px] flex items-center gap-0.5"
-            >
-              <ExternalLink className="w-3 h-3" /> IG
-            </a>
-          </div>
+          <span className="ml-auto text-zinc-700 text-[10px]">
+            {relativeTime(post.posted_at)}
+          </span>
         </div>
-      )}
-
-      {/* Views bar at bottom (always visible) */}
-      {!hover && views != null && (
-        <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent px-2 py-2">
-          <div className="flex items-center gap-1 text-white text-xs">
-            <Eye className="w-3 h-3 opacity-80" />
-            <span className="font-semibold">{fmt(views)}</span>
-          </div>
-        </div>
-      )}
+      </div>
     </div>
   );
 }
@@ -241,28 +252,39 @@ function PostCard({
 // ─────────────────────────────────────────────────────────────
 // Stat Card
 // ─────────────────────────────────────────────────────────────
-function StatCard({ label, value, icon, sub }: { label: string; value: string; icon: React.ReactNode; sub?: string }) {
+function StatCard({
+  label, value, sub, icon, accent = false,
+}: {
+  label: string; value: string; sub?: string; icon: React.ReactNode; accent?: boolean;
+}) {
   return (
-    <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4">
-      <div className="flex items-center gap-2 text-zinc-500 mb-2">
+    <div className={`rounded-xl px-4 py-3 border ${accent ? "bg-blue-600/10 border-blue-500/30" : "bg-zinc-900 border-zinc-800"}`}>
+      <div className="flex items-center gap-1.5 text-zinc-500 mb-1.5">
         {icon}
-        <span className="text-xs uppercase tracking-wide font-medium">{label}</span>
+        <span className="text-[10px] uppercase tracking-widest font-medium">{label}</span>
       </div>
-      <p className="text-xl font-bold text-white">{value}</p>
-      {sub && <p className="text-xs text-zinc-600 mt-0.5">{sub}</p>}
+      <p className={`text-lg font-bold ${accent ? "text-blue-400" : "text-white"}`}>{value}</p>
+      {sub && <p className="text-[10px] text-zinc-600 mt-0.5">{sub}</p>}
     </div>
   );
 }
 
 // ─────────────────────────────────────────────────────────────
-// Main Page
+// Period options
 // ─────────────────────────────────────────────────────────────
+const PERIODS: { key: Period; label: string }[] = [
+  { key: "today", label: "Aujourd'hui" },
+  { key: "week", label: "Cette semaine" },
+  { key: "month", label: "Ce mois" },
+  { key: "inception", label: "Depuis inception" },
+];
+
 const SORT_OPTIONS: { key: SortKey; label: string }[] = [
+  { key: "views", label: "Vues" },
+  { key: "likes", label: "Likes" },
+  { key: "engagement", label: "ER" },
   { key: "recent", label: "Récent" },
-  { key: "views", label: "Plus vus" },
-  { key: "likes", label: "Plus aimés" },
-  { key: "engagement", label: "Meilleur ER" },
-  { key: "comments", label: "Plus commentés" },
+  { key: "comments", label: "Commentaires" },
 ];
 
 const TYPE_OPTIONS: { key: TypeFilter; label: string }[] = [
@@ -273,6 +295,9 @@ const TYPE_OPTIONS: { key: TypeFilter; label: string }[] = [
   { key: "Sidecar", label: "Carrousels" },
 ];
 
+// ─────────────────────────────────────────────────────────────
+// Main Page
+// ─────────────────────────────────────────────────────────────
 export default function AccountDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -282,34 +307,16 @@ export default function AccountDetailPage() {
   const [posts, setPosts] = useState<Post[]>([]);
   const [loadingAcc, setLoadingAcc] = useState(true);
   const [loadingPosts, setLoadingPosts] = useState(true);
-  const [sort, setSort] = useState<SortKey>("recent");
+  const [period, setPeriod] = useState<Period>("inception");
+  const [sort, setSort] = useState<SortKey>("views");
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
   const [syncing, setSyncing] = useState(false);
   const [scanningReels, setScanningReels] = useState(false);
   const [reelsScanResult, setReelsScanResult] = useState<{ postsSaved: number } | null>(null);
+
   // Metadata panel
   const [activeMetaPost, setActiveMetaPost] = useState<Post | null>(null);
-  // Map of post.id → PostMetadata (cached from panel opens)
   const [metaMap, setMetaMap] = useState<Map<string, PostMetadata>>(new Map());
-
-  const handleOpenMeta = useCallback((post: Post) => {
-    setActiveMetaPost(post);
-  }, []);
-
-  const handleCloseMeta = useCallback(() => {
-    setActiveMetaPost(null);
-    // Refresh metadata for the closed post (so indicator updates)
-    if (activeMetaPost) {
-      fetch(`/api/instagram/posts/${activeMetaPost.id}/metadata`)
-        .then((r) => r.json())
-        .then((d) => {
-          if (d.metadata) {
-            setMetaMap((prev) => new Map(prev).set(activeMetaPost.id, d.metadata));
-          }
-        })
-        .catch(() => null);
-    }
-  }, [activeMetaPost]);
 
   const loadAccount = useCallback(async () => {
     setLoadingAcc(true);
@@ -325,10 +332,10 @@ export default function AccountDetailPage() {
     }
   }, [id]);
 
-  const loadPosts = useCallback(async () => {
+  const loadPosts = useCallback(async (p: Period) => {
     setLoadingPosts(true);
     try {
-      const res = await fetch(`/api/instagram/${id}/posts?limit=100`);
+      const res = await fetch(`/api/instagram/${id}/posts?limit=500&period=${p}`);
       if (res.ok) {
         const data = await res.json();
         setPosts(data.posts ?? []);
@@ -338,7 +345,21 @@ export default function AccountDetailPage() {
     }
   }, [id]);
 
-  useEffect(() => { loadAccount(); loadPosts(); }, [loadAccount, loadPosts]);
+  useEffect(() => { loadAccount(); }, [loadAccount]);
+  useEffect(() => { loadPosts(period); }, [loadPosts, period]);
+
+  const handleCloseMeta = useCallback(() => {
+    const post = activeMetaPost;
+    setActiveMetaPost(null);
+    if (post) {
+      fetch(`/api/instagram/posts/${post.id}/metadata`)
+        .then((r) => r.json())
+        .then((d) => {
+          if (d.metadata) setMetaMap((prev) => new Map(prev).set(post.id, d.metadata));
+        })
+        .catch(() => null);
+    }
+  }, [activeMetaPost]);
 
   async function runApifyScan(mode: "profile" | "reels") {
     const startRes = await fetch(`/api/instagram/${id}/collect`, {
@@ -348,7 +369,6 @@ export default function AccountDetailPage() {
     });
     if (!startRes.ok) return null;
     const { runId } = await startRes.json();
-
     let attempts = 0;
     while (attempts < 40) {
       await new Promise((r) => setTimeout(r, 5000));
@@ -367,10 +387,8 @@ export default function AccountDetailPage() {
     try {
       await runApifyScan("profile");
       loadAccount();
-      loadPosts();
-    } finally {
-      setSyncing(false);
-    }
+      loadPosts(period);
+    } finally { setSyncing(false); }
   };
 
   const handleScanReels = async () => {
@@ -379,59 +397,54 @@ export default function AccountDetailPage() {
     try {
       const result = await runApifyScan("reels");
       if (result) setReelsScanResult({ postsSaved: result.postsSaved ?? 0 });
-      loadPosts();
-    } finally {
-      setScanningReels(false);
-    }
+      loadPosts(period);
+    } finally { setScanningReels(false); }
   };
 
-  // Filter and sort posts
-  const filteredPosts = posts.filter((p) => {
-    if (typeFilter === "all") return true;
-    return p.post_type === typeFilter;
-  });
+  // ── Filter & Sort ──────────────────────────────────────────
+  const filtered = posts.filter((p) => typeFilter === "all" || p.post_type === typeFilter);
 
-  const sortedPosts = [...filteredPosts].sort((a, b) => {
+  const sorted = [...filtered].sort((a, b) => {
     switch (sort) {
-      case "views": {
-        const av = (a.latest_snapshot?.views_count ?? a.latest_snapshot?.plays_count ?? 0);
-        const bv = (b.latest_snapshot?.views_count ?? b.latest_snapshot?.plays_count ?? 0);
-        return bv - av;
-      }
+      case "views":
+        return (b.views_delta ?? b.latest_snapshot?.views_count ?? b.latest_snapshot?.plays_count ?? 0)
+             - (a.views_delta ?? a.latest_snapshot?.views_count ?? a.latest_snapshot?.plays_count ?? 0);
       case "likes":
         return (b.latest_snapshot?.likes_count ?? 0) - (a.latest_snapshot?.likes_count ?? 0);
       case "comments":
         return (b.latest_snapshot?.comments_count ?? 0) - (a.latest_snapshot?.comments_count ?? 0);
-      case "engagement": {
-        const ae = engagementRate(a) ?? 0;
-        const be = engagementRate(b) ?? 0;
-        return be - ae;
-      }
+      case "engagement":
+        return (engagementRate(b) ?? 0) - (engagementRate(a) ?? 0);
       default:
         return (b.posted_at ?? "").localeCompare(a.posted_at ?? "");
     }
   });
 
-  // Aggregate stats
-  const reelPosts = posts.filter((p) => p.post_type === "Reel" || p.post_type === "Video");
-  const withViews = reelPosts.filter((p) => (p.latest_snapshot?.views_count ?? p.latest_snapshot?.plays_count) != null);
-  const totalViews = withViews.reduce((s, p) => s + (p.latest_snapshot?.views_count ?? p.latest_snapshot?.plays_count ?? 0), 0);
+  // ── Aggregate stats ────────────────────────────────────────
+  const snap = account?.latest_snapshot;
+  const withViews = posts.filter((p) => p.views_delta != null);
+  const totalViews = withViews.reduce((s, p) => s + (p.views_delta ?? 0), 0);
   const avgViews = withViews.length > 0 ? Math.round(totalViews / withViews.length) : null;
-  const avgLikes = posts.filter(p => p.latest_snapshot?.likes_count != null).length > 0
-    ? Math.round(posts.reduce((s, p) => s + (p.latest_snapshot?.likes_count ?? 0), 0) / posts.filter(p => p.latest_snapshot?.likes_count != null).length)
+  const postsWithLikes = posts.filter((p) => p.latest_snapshot?.likes_count != null);
+  const avgLikes = postsWithLikes.length > 0
+    ? Math.round(postsWithLikes.reduce((s, p) => s + (p.latest_snapshot?.likes_count ?? 0), 0) / postsWithLikes.length)
     : null;
-  const avgEr = posts.filter(p => engagementRate(p) != null).length > 0
-    ? (posts.reduce((s, p) => s + (engagementRate(p) ?? 0), 0) / posts.filter(p => engagementRate(p) != null).length)
+  const postsWithEr = posts.filter((p) => engagementRate(p) != null);
+  const avgEr = postsWithEr.length > 0
+    ? postsWithEr.reduce((s, p) => s + (engagementRate(p) ?? 0), 0) / postsWithEr.length
     : null;
 
-  const snap = account?.latest_snapshot;
+  const typeCounts = TYPE_OPTIONS.slice(1).map((o) => ({
+    key: o.key,
+    count: posts.filter((p) => p.post_type === o.key).length,
+  }));
 
   return (
     <div className="min-h-screen bg-zinc-950 text-white">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6">
 
-        {/* ── Back + Sync ───────────────────────────────────────── */}
-        <div className="flex items-center justify-between mb-6">
+        {/* ── Top bar ─────────────────────────────────────── */}
+        <div className="flex items-center justify-between mb-6 gap-4 flex-wrap">
           <button
             onClick={() => router.back()}
             className="flex items-center gap-2 text-zinc-400 hover:text-white transition-colors text-sm"
@@ -439,17 +452,20 @@ export default function AccountDetailPage() {
             <ArrowLeft className="w-4 h-4" />
             Comptes
           </button>
+
           <div className="flex items-center gap-2 flex-wrap">
+            {reelsScanResult && (
+              <span className="text-xs text-purple-400 bg-purple-900/20 border border-purple-700/30 rounded-lg px-3 py-1.5">
+                {reelsScanResult.postsSaved} réel{reelsScanResult.postsSaved !== 1 ? "s" : ""} ✓
+              </span>
+            )}
             <a
               href={`https://instagram.com/${account?.instagram_handle ?? ""}`}
-              target="_blank"
-              rel="noopener noreferrer"
+              target="_blank" rel="noopener noreferrer"
               className="flex items-center gap-1.5 text-xs text-zinc-500 hover:text-white transition-colors border border-zinc-700 rounded-lg px-3 py-1.5"
             >
-              <ExternalLink className="w-3.5 h-3.5" />
-              Instagram
+              <ExternalLink className="w-3.5 h-3.5" /> Instagram
             </a>
-            {/* Scan Réels : scrape l'onglet /reels/ → jusqu'à 200 réels */}
             <button
               onClick={handleScanReels}
               disabled={scanningReels || syncing}
@@ -467,173 +483,180 @@ export default function AccountDetailPage() {
               {syncing ? "Sync…" : "Sync profil"}
             </button>
           </div>
-          {/* Résultat du scan réels */}
-          {reelsScanResult && (
-            <div className="text-xs text-purple-400 bg-purple-900/20 border border-purple-700/30 rounded-lg px-3 py-1.5">
-              {reelsScanResult.postsSaved} réel{reelsScanResult.postsSaved !== 1 ? "s" : ""} sauvegardé{reelsScanResult.postsSaved !== 1 ? "s" : ""} ✓
-            </div>
-          )}
         </div>
 
+        {/* ── Profile header ───────────────────────────────── */}
         {loadingAcc ? (
-          <div className="flex items-center gap-2 text-zinc-600 text-sm mb-6">
-            <RefreshCw className="w-4 h-4 animate-spin" />
-            Chargement…
+          <div className="flex items-center gap-3 mb-6">
+            <div className="w-16 h-16 rounded-full bg-zinc-800 animate-pulse" />
+            <div className="space-y-2">
+              <div className="w-36 h-5 bg-zinc-800 rounded animate-pulse" />
+              <div className="w-24 h-3 bg-zinc-800/60 rounded animate-pulse" />
+            </div>
           </div>
         ) : account ? (
-          <>
-            {/* ── Profile header ───────────────────────────────── */}
-            <div className="flex items-start gap-6 mb-8">
-              <IgAvatar url={snap?.profile_pic_url ?? null} handle={account.instagram_handle} size={80} />
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-3 flex-wrap">
-                  <h1 className="text-2xl font-bold text-white">@{account.instagram_handle}</h1>
-                  {account.model && (
-                    <span className="text-sm text-zinc-400 bg-zinc-800 border border-zinc-700 rounded-full px-3 py-0.5">
-                      {account.model.name}
-                    </span>
-                  )}
-                  {account.niche && (
-                    <span className="text-xs text-zinc-500 bg-zinc-800/60 border border-zinc-700/50 rounded-full px-2.5 py-0.5">
-                      {account.niche}
-                    </span>
-                  )}
-                </div>
-                <div className="flex gap-6 mt-3">
-                  <div>
-                    <p className="text-lg font-bold text-white">{fmt(snap?.followers_count)}</p>
-                    <p className="text-xs text-zinc-500">Followers</p>
-                  </div>
-                  <div>
-                    <p className="text-lg font-bold text-white">{fmt(snap?.following_count)}</p>
-                    <p className="text-xs text-zinc-500">Following</p>
-                  </div>
-                  <div>
-                    <p className="text-lg font-bold text-white">{fmt(snap?.posts_count)}</p>
-                    <p className="text-xs text-zinc-500">Posts</p>
-                  </div>
-                  <div>
-                    <p className="text-lg font-bold text-white">{posts.length}</p>
-                    <p className="text-xs text-zinc-500">En DB</p>
-                  </div>
-                </div>
-                {snap?.collected_at && (
-                  <p className="text-xs text-zinc-600 mt-2">
-                    Dernière sync : {relativeTime(snap.collected_at)}
-                  </p>
+          <div className="flex items-start gap-5 mb-6">
+            <IgAvatar url={snap?.profile_pic_url ?? null} handle={account.instagram_handle} size={64} />
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-3 flex-wrap">
+                <h1 className="text-xl font-bold text-white">@{account.instagram_handle}</h1>
+                {account.model && (
+                  <span className="text-xs text-zinc-400 bg-zinc-800 border border-zinc-700 rounded-full px-2.5 py-0.5">
+                    {account.model.name}
+                  </span>
+                )}
+                {account.niche && (
+                  <span className="text-xs text-zinc-500 bg-zinc-800/50 border border-zinc-700/40 rounded-full px-2.5 py-0.5">
+                    {account.niche}
+                  </span>
                 )}
               </div>
+              <div className="flex gap-5 mt-2">
+                {[
+                  { label: "Followers", val: fmt(snap?.followers_count) },
+                  { label: "Following", val: fmt(snap?.following_count) },
+                  { label: "Posts IG", val: fmt(snap?.posts_count) },
+                  { label: "En DB", val: String(posts.length) },
+                ].map(({ label, val }) => (
+                  <div key={label}>
+                    <p className="text-sm font-bold text-white">{val}</p>
+                    <p className="text-[10px] text-zinc-600">{label}</p>
+                  </div>
+                ))}
+              </div>
+              {snap?.collected_at && (
+                <p className="text-[10px] text-zinc-700 mt-1.5">
+                  Sync : {relativeTime(snap.collected_at)}
+                </p>
+              )}
             </div>
-
-            {/* ── Aggregate stats ──────────────────────────────── */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-8">
-              <StatCard
-                label="Total views"
-                value={fmt(totalViews)}
-                icon={<Eye className="w-4 h-4" />}
-                sub={`${reelPosts.length} réels/vidéos`}
-              />
-              <StatCard
-                label="Avg views"
-                value={fmt(avgViews)}
-                icon={<BarChart2 className="w-4 h-4" />}
-                sub="par reel/vidéo"
-              />
-              <StatCard
-                label="Avg likes"
-                value={fmt(avgLikes)}
-                icon={<Heart className="w-4 h-4" />}
-                sub="tous posts"
-              />
-              <StatCard
-                label="Avg ER"
-                value={avgEr != null ? `${avgEr.toFixed(1)}%` : "—"}
-                icon={<TrendingUp className="w-4 h-4" />}
-                sub="(likes+comments)/views"
-              />
-            </div>
-          </>
+          </div>
         ) : (
           <p className="text-zinc-500 text-sm mb-6">Compte introuvable.</p>
         )}
 
-        {/* ── Posts grid ───────────────────────────────────────── */}
-        <div>
-          {/* Filters */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
-            {/* Type filter */}
-            <div className="flex items-center gap-1.5 bg-zinc-900 border border-zinc-800 rounded-xl p-1 flex-wrap">
-              {TYPE_OPTIONS.map((opt) => {
-                const cnt = opt.key === "all"
-                  ? posts.length
-                  : posts.filter((p) => p.post_type === opt.key).length;
-                if (cnt === 0 && opt.key !== "all") return null;
-                return (
-                  <button
-                    key={opt.key}
-                    onClick={() => setTypeFilter(opt.key)}
-                    className={`px-3 py-1.5 text-sm rounded-lg transition-all font-medium flex items-center gap-1.5 ${
-                      typeFilter === opt.key
-                        ? "bg-blue-600 text-white"
-                        : "text-zinc-400 hover:text-white"
-                    }`}
-                  >
-                    {opt.key === "Reel" && <Film className="w-3.5 h-3.5" />}
-                    {opt.key === "Video" && <Play className="w-3.5 h-3.5" />}
-                    {opt.key === "Image" && <ImageIcon className="w-3.5 h-3.5" />}
-                    {opt.key === "Sidecar" && <Layers className="w-3.5 h-3.5" />}
-                    {opt.label}
-                    <span className="text-xs opacity-60">({cnt})</span>
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* Sort */}
-            <div className="flex items-center gap-1.5 flex-wrap">
-              <span className="text-xs text-zinc-600 mr-1">Trier :</span>
-              {SORT_OPTIONS.map((opt) => (
-                <button
-                  key={opt.key}
-                  onClick={() => setSort(opt.key)}
-                  className={`px-2.5 py-1 text-xs rounded-lg transition-all border ${
-                    sort === opt.key
-                      ? "bg-zinc-700 border-zinc-600 text-white"
-                      : "border-zinc-800 text-zinc-500 hover:text-white hover:border-zinc-600"
-                  }`}
-                >
-                  {opt.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Grid */}
-          {loadingPosts ? (
-            <div className="flex items-center gap-2 text-zinc-600 text-sm py-12 justify-center">
-              <RefreshCw className="w-4 h-4 animate-spin" />
-              Chargement des posts…
-            </div>
-          ) : sortedPosts.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-20 text-zinc-600">
-              <Users className="w-10 h-10 mb-3 opacity-30" />
-              <p className="text-sm">Aucun post trouvé.</p>
-              <p className="text-xs mt-1">Lance un sync pour récupérer les posts depuis Apify.</p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 gap-2">
-              {sortedPosts.map((post) => (
-                <PostCard
-                  key={post.id}
-                  post={post}
-                  metaMap={metaMap}
-                  onOpenMeta={handleOpenMeta}
-                />
-              ))}
-            </div>
-          )}
+        {/* ── Period selector ──────────────────────────────── */}
+        <div className="flex items-center gap-1.5 mb-5 bg-zinc-900 border border-zinc-800 rounded-xl p-1 w-fit">
+          {PERIODS.map((p) => (
+            <button
+              key={p.key}
+              onClick={() => setPeriod(p.key)}
+              className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-all ${
+                period === p.key
+                  ? "bg-blue-600 text-white"
+                  : "text-zinc-400 hover:text-white"
+              }`}
+            >
+              {p.label}
+            </button>
+          ))}
         </div>
 
+        {/* ── Stats cards ──────────────────────────────────── */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-7">
+          <StatCard
+            label="Vues"
+            value={fmt(totalViews)}
+            sub={period === "inception" ? "all-time" : `cette ${period === "week" ? "semaine" : period === "month" ? "période" : "journée"}`}
+            icon={<Eye className="w-3.5 h-3.5" />}
+            accent
+          />
+          <StatCard
+            label="Avg vues"
+            value={fmt(avgViews)}
+            sub="par reel/vidéo"
+            icon={<Eye className="w-3.5 h-3.5" />}
+          />
+          <StatCard
+            label="Avg likes"
+            value={fmt(avgLikes)}
+            sub="tous posts"
+            icon={<Heart className="w-3.5 h-3.5" />}
+          />
+          <StatCard
+            label="Avg ER"
+            value={avgEr != null ? `${avgEr.toFixed(1)}%` : "—"}
+            sub="(likes+comms)/vues"
+            icon={<TrendingUp className="w-3.5 h-3.5" />}
+          />
+        </div>
+
+        {/* ── Filters & Sort ───────────────────────────────── */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
+          {/* Type filter */}
+          <div className="flex items-center gap-1 bg-zinc-900 border border-zinc-800 rounded-xl p-1 flex-wrap">
+            {TYPE_OPTIONS.map((opt) => {
+              const cnt = opt.key === "all" ? posts.length : typeCounts.find((t) => t.key === opt.key)?.count ?? 0;
+              if (cnt === 0 && opt.key !== "all") return null;
+              return (
+                <button
+                  key={opt.key}
+                  onClick={() => setTypeFilter(opt.key)}
+                  className={`flex items-center gap-1 px-3 py-1.5 text-xs rounded-lg transition-all font-medium ${
+                    typeFilter === opt.key ? "bg-blue-600 text-white" : "text-zinc-400 hover:text-white"
+                  }`}
+                >
+                  {opt.key === "Reel" && <Film className="w-3 h-3" />}
+                  {opt.key === "Video" && <Play className="w-3 h-3" />}
+                  {opt.key === "Image" && <ImageIcon className="w-3 h-3" />}
+                  {opt.key === "Sidecar" && <Layers className="w-3 h-3" />}
+                  {opt.label}
+                  <span className="opacity-50">({cnt})</span>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Sort */}
+          <div className="flex items-center gap-1.5">
+            <span className="text-[10px] text-zinc-600 uppercase tracking-wide mr-1">Trier</span>
+            {SORT_OPTIONS.map((opt) => (
+              <button
+                key={opt.key}
+                onClick={() => setSort(opt.key)}
+                className={`px-2.5 py-1 text-xs rounded-lg border transition-all ${
+                  sort === opt.key
+                    ? "bg-zinc-700 border-zinc-600 text-white"
+                    : "border-zinc-800 text-zinc-500 hover:text-white hover:border-zinc-600"
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* ── Grid ─────────────────────────────────────────── */}
+        {loadingPosts ? (
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+            {Array.from({ length: 10 }).map((_, i) => (
+              <div key={i} className="rounded-xl bg-zinc-900 border border-zinc-800 overflow-hidden">
+                <div className="animate-pulse bg-zinc-800" style={{ aspectRatio: "9/16" }} />
+                <div className="p-3 space-y-2">
+                  <div className="h-2 bg-zinc-800 rounded animate-pulse" />
+                  <div className="h-2 bg-zinc-800/60 rounded w-2/3 animate-pulse" />
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : sorted.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-24 text-zinc-600">
+            <Users className="w-10 h-10 mb-3 opacity-30" />
+            <p className="text-sm">Aucun post trouvé.</p>
+            <p className="text-xs mt-1">Lance un "Scan Réels" pour récupérer les réels depuis Apify.</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+            {sorted.map((post) => (
+              <ReelCard
+                key={post.id}
+                post={post}
+                metaMap={metaMap}
+                onOpenMeta={setActiveMetaPost}
+              />
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Metadata panel */}
