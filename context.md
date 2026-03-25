@@ -43,7 +43,7 @@ L'outil doit être :
 - Auth : header `Authorization: Bearer {ofapi_api_key}` (clé stockée dans `settings.ofapi_api_key`)
 - Système de crédits : 1 crédit/requête non-cachée, 0 pour cachée
 - Les endpoints account-spécifiques sont préfixés `/api/{account_id}/...` (ex: `acct_XXXXXXXX`)
-- Le `account_id` OFAPI sera stocké sur le modèle `Account` (champ `ofapi_account_id`) lors de la feature "Ajouter un compte"
+- Le `account_id` OFAPI est stocké dans `accounts.ofapi_account_id` (contrainte `unique` — un compte OF ne peut être attribué qu'à une seule modèle)
 - Endpoints clés :
   - `GET /api/{account_id}/earning-statistics` — Revenue total + time series
   - `GET /api/{account_id}/fans/latest` — Derniers subscribers (nouveaux + renouvellements)
@@ -69,9 +69,9 @@ L'outil doit être :
 Un persona AI avec une apparence physique fixe définie par un LoRA.
 Champs : `name`, `avatar_url`, `persona`, `lora_id`, `lora_thumbnail_url`, `brand_notes`, `status` (active/inactive).
 
-### Table `accounts` (préparée, feature à venir)
-Un compte Instagram associé à une modèle.
-Champs clés : `model_id` (FK), `instagram_handle`, `niche`, `get_my_social_link_id` (GetMySocial API), `of_tracking_link` (OnlyFans tracking).
+### Table `accounts`
+Un compte OnlyFans associé à une modèle.
+Champs clés : `model_id` (FK), `ofapi_account_id` (unique — ID OFAPI ex: `acct_XXXXXXXX`), `of_username`, `of_avatar_url`, `instagram_handle`, `niche`, `get_my_social_link_id` (GetMySocial API), `of_tracking_link` (tracking link OF).
 
 ### Sources de données du funnel
 - **GetMySocial** : clics bio → `GET /api/v2/analytics/overview?scope=link&linkId={getMySocialLinkId}`

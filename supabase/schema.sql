@@ -102,7 +102,10 @@ create trigger on_model_updated
 create table if not exists public.accounts (
   id                    uuid        default gen_random_uuid() primary key,
   model_id              uuid        references public.models(id) on delete cascade not null,
-  instagram_handle      text        not null,
+  ofapi_account_id      text        unique,
+  of_username           text,
+  of_avatar_url         text,
+  instagram_handle      text,
   niche                 text,
   get_my_social_link_id text,
   of_tracking_link      text,

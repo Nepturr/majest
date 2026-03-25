@@ -5,12 +5,12 @@ import { Header } from "@/components/header";
 import { ALL_PAGES } from "@/lib/pages";
 import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
-import type { Model } from "@/types";
+import type { Model, Account, OFApiAccount } from "@/types";
 import {
   Plus, Pencil, Trash2, Shield, User, Copy, Check,
   X, Loader2, AlertCircle, Users, Plug, Sparkles,
   ImageOff, Upload, FileBox, Key, CheckCircle2, RefreshCw,
-  Link,
+  Link, UserPlus, Unlink, ChevronRight,
 } from "lucide-react";
 
 /* ─── Tab config ─── */
@@ -285,6 +285,7 @@ function ModelsTab() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [editModel, setEditModel] = useState<Model | null>(null);
   const [deleteModel, setDeleteModel] = useState<Model | null>(null);
+  const [accountsModel, setAccountsModel] = useState<Model | null>(null);
 
   const fetchModels = useCallback(async () => {
     setLoading(true);
@@ -342,6 +343,7 @@ function ModelsTab() {
                 <th className="text-left text-xs font-medium text-muted-foreground px-5 py-3">Model</th>
                 <th className="text-left text-xs font-medium text-muted-foreground px-5 py-3">LoRA</th>
                 <th className="text-left text-xs font-medium text-muted-foreground px-5 py-3">Persona</th>
+                <th className="text-left text-xs font-medium text-muted-foreground px-5 py-3">OF Accounts</th>
                 <th className="text-left text-xs font-medium text-muted-foreground px-5 py-3">Status</th>
                 <th className="text-left text-xs font-medium text-muted-foreground px-5 py-3">Added</th>
                 <th className="px-5 py-3" />
@@ -375,6 +377,15 @@ function ModelsTab() {
                     </p>
                   </td>
                   <td className="px-5 py-4">
+                    <button
+                      onClick={() => setAccountsModel(model)}
+                      className="inline-flex items-center gap-1.5 text-xs text-accent-light hover:text-accent transition-colors"
+                    >
+                      <UserPlus className="w-3.5 h-3.5" />
+                      Manage
+                    </button>
+                  </td>
+                  <td className="px-5 py-4">
                     <StatusBadge status={model.status} />
                   </td>
                   <td className="px-5 py-4 text-xs text-muted-foreground">
@@ -382,6 +393,13 @@ function ModelsTab() {
                   </td>
                   <td className="px-5 py-4">
                     <div className="flex items-center gap-1 justify-end">
+                      <button
+                        onClick={() => setAccountsModel(model)}
+                        className="w-8 h-8 rounded-lg hover:bg-background border border-transparent hover:border-border flex items-center justify-center transition-all"
+                        title="Manage OF accounts"
+                      >
+                        <UserPlus className="w-3.5 h-3.5 text-muted-foreground" />
+                      </button>
                       <button
                         onClick={() => setEditModel(model)}
                         className="w-8 h-8 rounded-lg hover:bg-background border border-transparent hover:border-border flex items-center justify-center transition-all"
@@ -423,6 +441,12 @@ function ModelsTab() {
           model={deleteModel}
           onClose={() => setDeleteModel(null)}
           onConfirm={() => handleDelete(deleteModel)}
+        />
+      )}
+      {accountsModel && (
+        <ModelAccountsModal
+          model={accountsModel}
+          onClose={() => setAccountsModel(null)}
         />
       )}
     </>
@@ -471,6 +495,271 @@ function StatusBadge({ status }: { status: "active" | "inactive" }) {
       <span className={cn("w-1.5 h-1.5 rounded-full", status === "active" ? "bg-success" : "bg-muted-foreground")} />
       {status === "active" ? "Active" : "Inactive"}
     </span>
+  );
+}
+
+/* ─── Model Accounts Modal ─── */
+function ModelAccountsModal({ model, onClose }: { model: Model; onClose: () => void }) {
+  const [accounts, setAccounts] = useState<Account[]>([]);
+  const [loadingAccounts, setLoadingAccounts] = useState(true);
+  const [showPicker, setShowPicker] = useState(false);
+  const [ofAccounts, setOfAccounts] = useState<OFApiAccount[]>([]);
+  const [loadingOf, setLoadingOf] = useState(false);
+  const [ofError, setOfError] = useState("");
+  const [linking, setLinking] = useState<string | null>(null);
+  const [unlinking, setUnlinking] = useState<string | null>(null);
+
+  const fetchAccounts = useCallback(async () => {
+    setLoadingAccounts(true);
+    const res = await fetch(`/api/admin/accounts?model_id=${model.id}`);
+    const data = await res.json();
+    setAccounts(data.accounts ?? []);
+    setLoadingAccounts(false);
+  }, [model.id]);
+
+  useEffect(() => { fetchAccounts(); }, [fetchAccounts]);
+
+  const openPicker = async () => {
+    setShowPicker(true);
+    setLoadingOf(true);
+    setOfError("");
+    const res = await fetch("/api/admin/ofapi/accounts");
+    const data = await res.json();
+    if (!res.ok) {
+      setOfError(data.error ?? "Failed to load OF accounts.");
+    } else {
+      setOfAccounts(data.accounts ?? []);
+    }
+    setLoadingOf(false);
+  };
+
+  const handleLink = async (ofAccount: OFApiAccount) => {
+    setLinking(ofAccount.id);
+    const res = await fetch("/api/admin/accounts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model_id: model.id,
+        ofapi_account_id: ofAccount.id,
+        of_username: ofAccount.username,
+        of_avatar_url: ofAccount.avatar,
+      }),
+    });
+    const data = await res.json();
+    if (res.ok) {
+      await fetchAccounts();
+      // Mark as assigned in picker
+      setOfAccounts((prev) =>
+        prev.map((a) =>
+          a.id === ofAccount.id
+            ? { ...a, isAssigned: true, assignedToModelId: model.id, assignedToModelName: model.name }
+            : a
+        )
+      );
+    } else {
+      alert(data.error ?? "Failed to link account.");
+    }
+    setLinking(null);
+  };
+
+  const handleUnlink = async (account: Account) => {
+    setUnlinking(account.id);
+    const res = await fetch(`/api/admin/accounts/${account.id}`, { method: "DELETE" });
+    if (res.ok) {
+      setAccounts((prev) => prev.filter((a) => a.id !== account.id));
+      // Unmark in picker if open
+      setOfAccounts((prev) =>
+        prev.map((a) =>
+          a.id === account.ofapi_account_id
+            ? { ...a, isAssigned: false, assignedToModelId: null, assignedToModelName: null }
+            : a
+        )
+      );
+    }
+    setUnlinking(null);
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative bg-background border border-border rounded-2xl w-full max-w-lg p-6 animate-fade-in max-h-[90vh] overflow-y-auto">
+
+        {/* Header */}
+        <div className="flex items-center justify-between mb-5">
+          <div className="flex items-center gap-3">
+            <ModelAvatar model={model} size="sm" />
+            <div>
+              <h3 className="text-base font-semibold">{model.name}</h3>
+              <p className="text-xs text-muted-foreground">OnlyFans Accounts</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="w-8 h-8 rounded-lg hover:bg-card flex items-center justify-center transition-colors">
+            <X className="w-4 h-4 text-muted-foreground" />
+          </button>
+        </div>
+
+        {/* Linked accounts */}
+        <div className="space-y-2 mb-4">
+          {loadingAccounts ? (
+            <div className="flex items-center justify-center h-16">
+              <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+            </div>
+          ) : accounts.length === 0 ? (
+            <div className="text-center py-8 bg-card border border-border rounded-xl">
+              <p className="text-sm font-medium">No accounts linked yet</p>
+              <p className="text-xs text-muted-foreground mt-1">
+                Link an OnlyFans account from the picker below.
+              </p>
+            </div>
+          ) : (
+            accounts.map((account) => (
+              <div
+                key={account.id}
+                className="flex items-center gap-3 px-4 py-3 bg-card border border-border rounded-xl"
+              >
+                {account.of_avatar_url ? (
+                  <img
+                    src={account.of_avatar_url}
+                    alt={account.of_username ?? ""}
+                    className="w-8 h-8 rounded-full object-cover border border-border shrink-0"
+                    onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+                  />
+                ) : (
+                  <div className="w-8 h-8 rounded-full bg-accent/15 border border-accent/25 flex items-center justify-center shrink-0">
+                    <span className="text-xs font-bold text-accent-light">
+                      {account.of_username?.[0]?.toUpperCase() ?? "?"}
+                    </span>
+                  </div>
+                )}
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium truncate">
+                    {account.of_username ? `@${account.of_username}` : "Unknown"}
+                  </p>
+                  <p className="text-[11px] text-muted-foreground font-mono truncate">
+                    {account.ofapi_account_id}
+                  </p>
+                </div>
+                <button
+                  onClick={() => handleUnlink(account)}
+                  disabled={unlinking === account.id}
+                  className="w-8 h-8 rounded-lg hover:bg-danger/10 border border-transparent hover:border-danger/20 flex items-center justify-center transition-all shrink-0"
+                  title="Unlink"
+                >
+                  {unlinking === account.id
+                    ? <Loader2 className="w-3.5 h-3.5 animate-spin text-muted-foreground" />
+                    : <Unlink className="w-3.5 h-3.5 text-muted-foreground" />
+                  }
+                </button>
+              </div>
+            ))
+          )}
+        </div>
+
+        {/* Add account button */}
+        {!showPicker && (
+          <button
+            onClick={openPicker}
+            className="w-full h-10 bg-card border border-border hover:bg-card-hover text-sm font-medium rounded-xl flex items-center justify-center gap-2 transition-colors"
+          >
+            <UserPlus className="w-4 h-4 text-muted-foreground" />
+            Link an OF Account
+          </button>
+        )}
+
+        {/* OF Account Picker */}
+        {showPicker && (
+          <div className="border border-border rounded-xl overflow-hidden">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-card">
+              <p className="text-xs font-semibold">Connected OF Accounts</p>
+              <button
+                onClick={() => setShowPicker(false)}
+                className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+              >
+                Close
+              </button>
+            </div>
+
+            {loadingOf ? (
+              <div className="flex items-center justify-center h-24">
+                <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+              </div>
+            ) : ofError ? (
+              <div className="flex items-center gap-2 text-sm text-danger px-4 py-4">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                {ofError}
+              </div>
+            ) : ofAccounts.length === 0 ? (
+              <div className="text-center py-8 px-4">
+                <p className="text-sm font-medium">No accounts found</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Connect accounts in your OnlyFansAPI console first.
+                </p>
+              </div>
+            ) : (
+              <div className="divide-y divide-border">
+                {ofAccounts.map((ofAccount) => {
+                  const isLinkedToThis = accounts.some((a) => a.ofapi_account_id === ofAccount.id);
+                  const isLinkedElsewhere = ofAccount.isAssigned && !isLinkedToThis;
+                  const isLinking = linking === ofAccount.id;
+
+                  return (
+                    <div
+                      key={ofAccount.id}
+                      className={cn(
+                        "flex items-center gap-3 px-4 py-3 transition-colors",
+                        isLinkedElsewhere ? "opacity-50" : "hover:bg-card"
+                      )}
+                    >
+                      {ofAccount.avatar ? (
+                        <img
+                          src={ofAccount.avatar}
+                          alt={ofAccount.username}
+                          className="w-8 h-8 rounded-full object-cover border border-border shrink-0"
+                          onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+                        />
+                      ) : (
+                        <div className="w-8 h-8 rounded-full bg-muted-foreground/10 border border-border flex items-center justify-center shrink-0">
+                          <span className="text-xs font-bold text-muted-foreground">
+                            {ofAccount.username[0]?.toUpperCase() ?? "?"}
+                          </span>
+                        </div>
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate">@{ofAccount.username}</p>
+                        <p className="text-[11px] text-muted-foreground font-mono">{ofAccount.id}</p>
+                      </div>
+                      <div className="shrink-0">
+                        {isLinkedToThis ? (
+                          <span className="text-xs text-success font-medium flex items-center gap-1">
+                            <Check className="w-3 h-3" /> Linked
+                          </span>
+                        ) : isLinkedElsewhere ? (
+                          <span className="text-[10px] text-muted-foreground">
+                            → {ofAccount.assignedToModelName}
+                          </span>
+                        ) : (
+                          <button
+                            onClick={() => handleLink(ofAccount)}
+                            disabled={isLinking}
+                            className="h-7 px-3 bg-accent hover:bg-accent-dark disabled:opacity-50 text-white text-xs font-medium rounded-lg flex items-center gap-1.5 transition-colors"
+                          >
+                            {isLinking
+                              ? <Loader2 className="w-3 h-3 animate-spin" />
+                              : <ChevronRight className="w-3 h-3" />
+                            }
+                            Link
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 

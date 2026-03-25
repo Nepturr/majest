@@ -72,11 +72,25 @@ export interface Model {
 export interface Account {
   id: string;
   model_id: string;
-  instagram_handle: string;
+  ofapi_account_id: string | null;
+  of_username: string | null;
+  of_avatar_url: string | null;
+  instagram_handle: string | null;
   niche: string | null;
   get_my_social_link_id: string | null;
   of_tracking_link: string | null;
   status: "active" | "inactive";
   created_at: string;
   updated_at: string;
+}
+
+/** A connected OnlyFans account from the OFAPI console */
+export interface OFApiAccount {
+  id: string;          // e.g. "acct_XXXXXXXX"
+  username: string;
+  name: string | null;
+  avatar: string | null;
+  isAssigned: boolean;
+  assignedToModelId: string | null;
+  assignedToModelName: string | null;
 }
