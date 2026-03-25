@@ -5,8 +5,10 @@ import { useParams, useRouter } from "next/navigation";
 import {
   ArrowLeft, Heart, MessageCircle, Eye, Play, RefreshCw,
   ExternalLink, TrendingUp, Users, Film, Image as ImageIcon,
-  Layers, BarChart2,
+  Layers, BarChart2, PenLine,
 } from "lucide-react";
+import { PostMetadataPanel, hasMetadata } from "@/components/post-metadata-panel";
+import type { PostForPanel, PostMetadata } from "@/components/post-metadata-panel";
 
 // ─────────────────────────────────────────────────────────────
 // Types
@@ -111,9 +113,17 @@ function IgAvatar({ url, handle, size = 80 }: { url: string | null; handle: stri
 }
 
 // ─────────────────────────────────────────────────────────────
-// Post Card
+// Post Card — click → metadata panel, not IG
 // ─────────────────────────────────────────────────────────────
-function PostCard({ post }: { post: Post }) {
+function PostCard({
+  post,
+  metaMap,
+  onOpenMeta,
+}: {
+  post: Post;
+  metaMap: Map<string, PostMetadata>;
+  onOpenMeta: (post: Post) => void;
+}) {
   const [hover, setHover] = useState(false);
   const snap = post.latest_snapshot;
   const views = snap?.views_count ?? snap?.plays_count;
@@ -122,19 +132,20 @@ function PostCard({ post }: { post: Post }) {
     ? Date.now() - new Date(post.last_seen_at).getTime() > 14 * 86400000
     : false;
   const inactive = !post.is_active || stale;
+  const hasMeta = hasMetadata(metaMap.get(post.id) ?? null);
 
   return (
-    <a
-      href={post.url}
-      target="_blank"
-      rel="noopener noreferrer"
-      className={`relative rounded-lg overflow-hidden bg-zinc-800 border transition-colors group cursor-pointer block ${
+    <div
+      className={`relative rounded-lg overflow-hidden bg-zinc-800 border transition-colors cursor-pointer ${
         inactive
           ? "border-zinc-800 opacity-40 grayscale"
-          : "border-zinc-700 hover:border-zinc-500"
+          : hover
+            ? "border-blue-500/60"
+            : "border-zinc-700"
       }`}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
+      onClick={() => onOpenMeta(post)}
       style={{ aspectRatio: "9/16" }}
     >
       {/* Thumbnail */}
@@ -152,6 +163,11 @@ function PostCard({ post }: { post: Post }) {
         {post.post_type}
       </div>
 
+      {/* Metadata indicator dot */}
+      {hasMeta && (
+        <div className="absolute top-2 right-2 w-2 h-2 rounded-full bg-emerald-400 ring-1 ring-zinc-900" title="Metadata remplie" />
+      )}
+
       {/* Stale / inactive badge */}
       {inactive && (
         <div className="absolute top-2 right-2 bg-orange-600/80 rounded px-1.5 py-0.5 text-[9px] text-white font-medium">
@@ -159,9 +175,9 @@ function PostCard({ post }: { post: Post }) {
         </div>
       )}
 
-      {/* Hover overlay with metrics */}
+      {/* Hover overlay with metrics + open IG link */}
       {hover && (
-        <div className="absolute inset-0 bg-black/70 flex flex-col justify-end p-3 gap-1.5">
+        <div className="absolute inset-0 bg-black/75 flex flex-col justify-end p-3 gap-1.5">
           {views != null && (
             <div className="flex items-center gap-1.5 text-white text-xs">
               <Eye className="w-3 h-3" />
@@ -186,12 +202,21 @@ function PostCard({ post }: { post: Post }) {
               <span>{er.toFixed(1)}% ER</span>
             </div>
           )}
-          {post.caption && (
-            <p className="text-zinc-300 text-[10px] leading-relaxed mt-1 line-clamp-3">
-              {post.caption}
-            </p>
-          )}
-          <p className="text-zinc-500 text-[10px]">{relativeTime(post.posted_at)}</p>
+          <div className="flex items-center gap-1.5 mt-1 pt-1 border-t border-white/10">
+            <div className="flex items-center gap-1 text-blue-400 text-[10px] font-medium">
+              <PenLine className="w-3 h-3" />
+              Analyser
+            </div>
+            <a
+              href={post.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              className="ml-auto text-zinc-400 hover:text-white text-[10px] flex items-center gap-0.5"
+            >
+              <ExternalLink className="w-3 h-3" /> IG
+            </a>
+          </div>
         </div>
       )}
 
@@ -255,6 +280,29 @@ export default function AccountDetailPage() {
   const [sort, setSort] = useState<SortKey>("recent");
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
   const [syncing, setSyncing] = useState(false);
+  // Metadata panel
+  const [activeMetaPost, setActiveMetaPost] = useState<Post | null>(null);
+  // Map of post.id → PostMetadata (cached from panel opens)
+  const [metaMap, setMetaMap] = useState<Map<string, PostMetadata>>(new Map());
+
+  const handleOpenMeta = useCallback((post: Post) => {
+    setActiveMetaPost(post);
+  }, []);
+
+  const handleCloseMeta = useCallback(() => {
+    setActiveMetaPost(null);
+    // Refresh metadata for the closed post (so indicator updates)
+    if (activeMetaPost) {
+      fetch(`/api/instagram/posts/${activeMetaPost.id}/metadata`)
+        .then((r) => r.json())
+        .then((d) => {
+          if (d.metadata) {
+            setMetaMap((prev) => new Map(prev).set(activeMetaPost.id, d.metadata));
+          }
+        })
+        .catch(() => null);
+    }
+  }, [activeMetaPost]);
 
   const loadAccount = useCallback(async () => {
     setLoadingAcc(true);
@@ -536,13 +584,26 @@ export default function AccountDetailPage() {
           ) : (
             <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 gap-2">
               {sortedPosts.map((post) => (
-                <PostCard key={post.id} post={post} />
+                <PostCard
+                  key={post.id}
+                  post={post}
+                  metaMap={metaMap}
+                  onOpenMeta={handleOpenMeta}
+                />
               ))}
             </div>
           )}
         </div>
 
       </div>
+
+      {/* Metadata panel */}
+      {activeMetaPost && (
+        <PostMetadataPanel
+          post={activeMetaPost as PostForPanel}
+          onClose={handleCloseMeta}
+        />
+      )}
     </div>
   );
 }
