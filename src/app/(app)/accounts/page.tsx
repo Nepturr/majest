@@ -396,8 +396,8 @@ function AccountModal({ account, onClose, onSuccess }: AccountModalProps) {
                 value={selectedOneUp}
                 onSelect={setSelectedOneUp}
                 getKey={(a) => a.social_network_id}
-                getLabel={(a) => a.social_network_name}
-                getSubLabel={(a) => a.category_name}
+                getLabel={(a) => `@${a.social_network_name}`}
+                getSubLabel={(a) => a.category_name || null}
                 isDisabled={(a) => a.isAssigned && a.social_network_id !== account?.oneup_social_network_id}
                 loading={loadingOneup}
                 error={errorOneup}
@@ -405,7 +405,9 @@ function AccountModal({ account, onClose, onSuccess }: AccountModalProps) {
               {selectedOneUp && (
                 <p className="mt-2 text-xs text-muted-foreground">
                   Handle: <span className="font-mono text-foreground">@{selectedOneUp.social_network_name}</span>
-                  {" · "}Category: <span className="text-foreground">{selectedOneUp.category_name}</span>
+                  {selectedOneUp.category_name && (
+                    <>{" · "}<span className="text-foreground">{selectedOneUp.category_name}</span></>
+                  )}
                 </p>
               )}
             </div>

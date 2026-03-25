@@ -35,62 +35,30 @@ export async function GET() {
 
   const apiKey = setting.value;
 
-  // Fetch all categories
-  const catRes = await fetch(
-    `https://www.oneupapp.io/api/listcategory?apiKey=${apiKey}`
+  // Use listsocialaccounts — returns ALL connected accounts with social_account_id
+  const res = await fetch(
+    `https://www.oneupapp.io/api/listsocialaccounts?apiKey=${apiKey}`
   );
-  const catJson = await catRes.json();
-  if (!catRes.ok || catJson.error) {
-    return NextResponse.json({ error: "Failed to fetch OneUp categories." }, { status: 502 });
+  const json = await res.json();
+  if (!res.ok || json.error) {
+    return NextResponse.json({ error: "Failed to fetch OneUp accounts." }, { status: 502 });
   }
 
-  const categories: { id: number; category_name: string }[] = catJson.data ?? [];
+  const allAccounts: {
+    username: string;
+    social_account_id: string;
+    full_name: string;
+    is_expired: number;
+    social_network_type: string;
+    need_refresh: boolean;
+  }[] = json.data ?? [];
 
-  // Fetch accounts for all categories in parallel
-  const categoryAccountLists = await Promise.all(
-    categories.map(async (cat) => {
-      const res = await fetch(
-        `https://www.oneupapp.io/api/listcategoryaccount?apiKey=${apiKey}&category_id=${cat.id}`
-      );
-      const json = await res.json();
-      return {
-        category_id: String(cat.id),
-        category_name: cat.category_name,
-        accounts: (json.data ?? []) as {
-          social_network_id: string;
-          social_network_name: string;
-          social_network_type: string;
-        }[],
-      };
-    })
+  // Filter Instagram only
+  const instagramAccounts = allAccounts.filter(
+    (a) => a.social_network_type?.toLowerCase() === "instagram"
   );
 
-  // Flatten, filter Instagram only, deduplicate by social_network_id
-  const seen = new Set<string>();
-  const allInstagramAccounts: {
-    social_network_id: string;
-    social_network_name: string;
-    category_id: string;
-    category_name: string;
-    is_expired: boolean;
-  }[] = [];
-
-  for (const { category_id, category_name, accounts } of categoryAccountLists) {
-    for (const acc of accounts) {
-      if (acc.social_network_type !== "Instagram") continue;
-      if (seen.has(acc.social_network_id)) continue;
-      seen.add(acc.social_network_id);
-      allInstagramAccounts.push({
-        social_network_id: acc.social_network_id,
-        social_network_name: acc.social_network_name,
-        category_id,
-        category_name,
-        is_expired: false,
-      });
-    }
-  }
-
-  // Get already-assigned social_network_ids from our DB
+  // Get already-assigned IDs from our DB
   const { data: assigned } = await adminClient
     .from("instagram_accounts")
     .select("oneup_social_network_id")
@@ -98,9 +66,13 @@ export async function GET() {
 
   const assignedIds = new Set((assigned ?? []).map((r) => r.oneup_social_network_id));
 
-  const result = allInstagramAccounts.map((acc) => ({
-    ...acc,
-    isAssigned: assignedIds.has(acc.social_network_id),
+  const result = instagramAccounts.map((acc) => ({
+    social_network_id: acc.social_account_id,
+    social_network_name: acc.username,
+    category_id: "",         // not available from listsocialaccounts
+    category_name: acc.full_name ?? "",
+    is_expired: acc.is_expired === 1,
+    isAssigned: assignedIds.has(acc.social_account_id),
   }));
 
   return NextResponse.json({ accounts: result });
