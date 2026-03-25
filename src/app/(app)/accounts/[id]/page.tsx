@@ -27,6 +27,8 @@ interface Post {
   caption: string | null;
   thumbnail_url: string | null;
   posted_at: string | null;
+  is_active: boolean;
+  last_seen_at: string | null;
   latest_snapshot: PostSnapshot | null;
 }
 
@@ -116,13 +118,21 @@ function PostCard({ post }: { post: Post }) {
   const snap = post.latest_snapshot;
   const views = snap?.views_count ?? snap?.plays_count;
   const er = engagementRate(post);
+  const stale = post.last_seen_at
+    ? Date.now() - new Date(post.last_seen_at).getTime() > 14 * 86400000
+    : false;
+  const inactive = !post.is_active || stale;
 
   return (
     <a
       href={post.url}
       target="_blank"
       rel="noopener noreferrer"
-      className="relative rounded-lg overflow-hidden bg-zinc-800 border border-zinc-700 hover:border-zinc-500 transition-colors group cursor-pointer block"
+      className={`relative rounded-lg overflow-hidden bg-zinc-800 border transition-colors group cursor-pointer block ${
+        inactive
+          ? "border-zinc-800 opacity-40 grayscale"
+          : "border-zinc-700 hover:border-zinc-500"
+      }`}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
       style={{ aspectRatio: "9/16" }}
@@ -141,6 +151,13 @@ function PostCard({ post }: { post: Post }) {
         <PostTypeIcon type={post.post_type} />
         {post.post_type}
       </div>
+
+      {/* Stale / inactive badge */}
+      {inactive && (
+        <div className="absolute top-2 right-2 bg-orange-600/80 rounded px-1.5 py-0.5 text-[9px] text-white font-medium">
+          {!post.is_active ? "supprimé" : "stale"}
+        </div>
+      )}
 
       {/* Hover overlay with metrics */}
       {hover && (

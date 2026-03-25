@@ -27,6 +27,7 @@ export interface FunnelAccount {
     clicks: number;
     unique_visitors: number;
     tier1_pct: number | null;
+    is_delta: boolean; // true = delta période, false = total cumulatif (1er snapshot)
   } | null;
   tracking: {
     clicks_delta: number;
@@ -183,32 +184,29 @@ export async function GET(req: NextRequest) {
     igAgg.set(post.instagram_account_id, a);
   }
 
-  // ── 4. GMS daily stats (clicks for the period) ───────────────
-  const { data: gmsRows } = await adminClient
-    .from("gms_daily_stats")
-    .select("instagram_account_id, date, clicks, unique_visitors")
-    .in("instagram_account_id", accountIds)
-    .gte("date", startDate);
-
-  const gmsByAccount = new Map<string, { clicks: number; unique_visitors: number }>();
-  for (const row of gmsRows ?? []) {
-    const cur = gmsByAccount.get(row.instagram_account_id) ?? { clicks: 0, unique_visitors: 0 };
-    cur.clicks += row.clicks ?? 0;
-    cur.unique_visitors += row.unique_visitors ?? 0;
-    gmsByAccount.set(row.instagram_account_id, cur);
-  }
-
-  // Latest GMS overview (tier1_pct)
-  const { data: gmsOverviews } = await adminClient
+  // ── 4. GMS overview snapshots (delta = période) ──────────────
+  // On utilise le cumulatif total_clicks et on calcule le delta
+  // entre le dernier snapshot et le snapshot au début de la période.
+  // C'est la même logique que tracking_link_snapshots.
+  const { data: gmsSnaps } = await adminClient
     .from("gms_overview_snapshots")
-    .select("instagram_account_id, tier1_pct, collected_at")
+    .select("instagram_account_id, total_clicks, unique_visitors, tier1_pct, collected_at")
     .in("instagram_account_id", accountIds)
     .order("collected_at", { ascending: false });
 
-  const latestGmsOverview = new Map<string, { tier1_pct: number | null }>();
-  for (const row of gmsOverviews ?? []) {
-    if (!latestGmsOverview.has(row.instagram_account_id)) {
-      latestGmsOverview.set(row.instagram_account_id, { tier1_pct: row.tier1_pct });
+  const latestGmsSnap = new Map<string, { total_clicks: number | null; unique_visitors: number | null; tier1_pct: number | null }>();
+  const periodStartGmsSnap = new Map<string, { total_clicks: number | null }>();
+
+  for (const row of gmsSnaps ?? []) {
+    if (!latestGmsSnap.has(row.instagram_account_id)) {
+      latestGmsSnap.set(row.instagram_account_id, {
+        total_clicks: row.total_clicks,
+        unique_visitors: row.unique_visitors,
+        tier1_pct: row.tier1_pct,
+      });
+    }
+    if (!periodStartGmsSnap.has(row.instagram_account_id) && row.collected_at <= startIso) {
+      periodStartGmsSnap.set(row.instagram_account_id, { total_clicks: row.total_clicks });
     }
   }
 
@@ -248,8 +246,8 @@ export async function GET(req: NextRequest) {
     const snap = latestSnap.get(account.id);
     const prevSnap = periodStartSnap.get(account.id);
     const agg = igAgg.get(account.id);
-    const gmsData = gmsByAccount.get(account.id);
-    const gmsOv = latestGmsOverview.get(account.id);
+    const gmsLatest = latestGmsSnap.get(account.id);
+    const gmsPrev = periodStartGmsSnap.get(account.id);
     const trackLatest = latestTrack.get(account.id);
     const trackPrev = periodStartTrack.get(account.id);
 
@@ -287,11 +285,20 @@ export async function GET(req: NextRequest) {
         total_posts_in_db: agg?.total ?? 0,
       },
       gms: account.get_my_social_link_id
-        ? {
-            clicks: gmsData?.clicks ?? 0,
-            unique_visitors: gmsData?.unique_visitors ?? 0,
-            tier1_pct: gmsOv?.tier1_pct ?? null,
-          }
+        ? (() => {
+            // Delta période : si pas de snapshot antérieur, on affiche le total cumulatif
+            const latestClicks = gmsLatest?.total_clicks ?? null;
+            const prevClicks = gmsPrev?.total_clicks ?? null;
+            const clicksDelta = (latestClicks != null && prevClicks != null)
+              ? Math.max(0, latestClicks - prevClicks)
+              : (latestClicks ?? 0); // 1er snapshot : affiche le total
+            return {
+              clicks: clicksDelta,
+              unique_visitors: gmsLatest?.unique_visitors ?? 0,
+              tier1_pct: gmsLatest?.tier1_pct ?? null,
+              is_delta: prevClicks != null, // indique si c'est un vrai delta ou un total
+            };
+          })()
         : null,
       tracking: trackLatest != null
         ? {

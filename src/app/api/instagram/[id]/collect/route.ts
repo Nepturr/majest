@@ -171,7 +171,7 @@ export async function GET(
 
     const postType = mapPostType(post);
 
-    // Upsert du post (structure invariante)
+    // Upsert du post (structure invariante + mise à jour last_seen_at)
     const { data: upsertedPost } = await adminClient
       .from("instagram_posts")
       .upsert(
@@ -183,6 +183,8 @@ export async function GET(
           caption: post.caption ?? null,
           thumbnail_url: post.displayUrl ?? null,
           posted_at: post.timestamp ?? null,
+          last_seen_at: new Date().toISOString(),
+          is_active: true,
         },
         { onConflict: "shortcode", ignoreDuplicates: false }
       )

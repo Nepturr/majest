@@ -227,27 +227,163 @@ function RateBadge({ rate, thresholds }: { rate: number | null; thresholds: [num
 }
 
 // ─────────────────────────────────────────────────────────────
-// Account Row (expandable)
+// Post types for inline reels grid
+// ─────────────────────────────────────────────────────────────
+interface PerfPost {
+  id: string;
+  shortcode: string;
+  post_type: string;
+  url: string;
+  caption: string | null;
+  thumbnail_url: string | null;
+  posted_at: string | null;
+  is_active: boolean;
+  last_seen_at: string | null;
+  latest_snapshot: {
+    likes_count: number | null;
+    comments_count: number | null;
+    views_count: number | null;
+    plays_count: number | null;
+    collected_at: string;
+  } | null;
+}
+
+function postEngagementRate(post: PerfPost): number | null {
+  const snap = post.latest_snapshot;
+  if (!snap) return null;
+  const interactions = (snap.likes_count ?? 0) + (snap.comments_count ?? 0);
+  const views = snap.views_count ?? snap.plays_count;
+  if (!views) return null;
+  return (interactions / views) * 100;
+}
+
+function MiniPostCard({ post }: { post: PerfPost }) {
+  const [hover, setHover] = useState(false);
+  const snap = post.latest_snapshot;
+  const views = snap?.views_count ?? snap?.plays_count;
+  const er = postEngagementRate(post);
+  const stale = post.last_seen_at
+    ? Date.now() - new Date(post.last_seen_at).getTime() > 14 * 86400000
+    : false;
+  const inactive = !post.is_active || stale;
+
+  return (
+    <a
+      href={post.url}
+      target="_blank"
+      rel="noopener noreferrer"
+      title={post.caption?.slice(0, 100) ?? ""}
+      className={`relative rounded-lg overflow-hidden border transition-all block ${
+        inactive
+          ? "opacity-40 border-zinc-800 grayscale"
+          : "border-zinc-700 hover:border-zinc-500"
+      }`}
+      style={{ aspectRatio: "9/16" }}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+    >
+      {post.thumbnail_url ? (
+        <img src={post.thumbnail_url} alt="" className="w-full h-full object-cover" />
+      ) : (
+        <div className="w-full h-full bg-zinc-800 flex items-center justify-center text-zinc-600 text-xs">
+          {post.post_type}
+        </div>
+      )}
+
+      {/* Type badge */}
+      {(post.post_type === "Reel" || post.post_type === "Video") && (
+        <div className="absolute top-1 left-1 bg-black/60 rounded px-1 py-0.5 text-[9px] text-white font-medium">
+          {post.post_type === "Reel" ? "▶ Reel" : "▶ Vid"}
+        </div>
+      )}
+
+      {/* Stale badge */}
+      {stale && (
+        <div className="absolute top-1 right-1 bg-orange-500/80 rounded px-1 py-0.5 text-[9px] text-white font-medium">
+          stale
+        </div>
+      )}
+
+      {/* Hover overlay */}
+      {hover && !inactive && (
+        <div className="absolute inset-0 bg-black/75 flex flex-col justify-end p-2 gap-1">
+          {views != null && (
+            <div className="text-white text-[10px] font-semibold">{fmt(views)} vues</div>
+          )}
+          {snap?.likes_count != null && (
+            <div className="text-zinc-300 text-[10px]">♥ {fmt(snap.likes_count)}</div>
+          )}
+          {er != null && (
+            <div className="text-emerald-400 text-[10px] font-semibold">{er.toFixed(1)}% ER</div>
+          )}
+          {snap?.comments_count != null && (
+            <div className="text-zinc-400 text-[10px]">💬 {fmt(snap.comments_count)}</div>
+          )}
+        </div>
+      )}
+
+      {/* Views always visible at bottom */}
+      {!hover && views != null && (
+        <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent px-1.5 py-1.5">
+          <p className="text-white text-[10px] font-semibold">👁 {fmt(views)}</p>
+        </div>
+      )}
+    </a>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
+// Account Row (expandable with reels)
 // ─────────────────────────────────────────────────────────────
 function AccountRow({ account }: { account: FunnelAccount }) {
   const [open, setOpen] = useState(false);
+  const [posts, setPosts] = useState<PerfPost[] | null>(null);
+  const [loadingPosts, setLoadingPosts] = useState(false);
+  const [sortPosts, setSortPosts] = useState<"views" | "likes" | "er" | "recent">("views");
 
   const ig = account.instagram;
   const gms = account.gms;
   const track = account.tracking;
 
   const followers = ig.followers_current;
-  // CTR = clicks / views (if available) or clicks / followers
   const funnelBase = ig.views_delta ?? followers;
   const bioCtr = gms && funnelBase ? (gms.clicks / funnelBase) * 100 : null;
   const trackCtr = gms && gms.clicks > 0 ? ((track?.clicks_delta ?? 0) / gms.clicks) * 100 : null;
   const subRate = track && track.clicks_delta > 0 ? (track.subscribers_delta / track.clicks_delta) * 100 : null;
 
+  const handleOpen = async () => {
+    const newOpen = !open;
+    setOpen(newOpen);
+    if (newOpen && posts === null) {
+      setLoadingPosts(true);
+      try {
+        const res = await fetch(`/api/instagram/${account.id}/posts?limit=100`);
+        if (res.ok) {
+          const data = await res.json();
+          setPosts(data.posts ?? []);
+        }
+      } finally {
+        setLoadingPosts(false);
+      }
+    }
+  };
+
+  const sortedPosts = posts ? [...posts].sort((a, b) => {
+    const av = a.latest_snapshot?.views_count ?? a.latest_snapshot?.plays_count ?? 0;
+    const bv = b.latest_snapshot?.views_count ?? b.latest_snapshot?.plays_count ?? 0;
+    const al = a.latest_snapshot?.likes_count ?? 0;
+    const bl = b.latest_snapshot?.likes_count ?? 0;
+    if (sortPosts === "views") return bv - av;
+    if (sortPosts === "likes") return bl - al;
+    if (sortPosts === "er") return (postEngagementRate(b) ?? 0) - (postEngagementRate(a) ?? 0);
+    return (b.posted_at ?? "").localeCompare(a.posted_at ?? "");
+  }) : null;
+
   return (
     <>
       <tr
         className="border-b border-zinc-800 hover:bg-zinc-900/60 cursor-pointer transition-colors"
-        onClick={() => setOpen(!open)}
+        onClick={handleOpen}
       >
         {/* Account */}
         <td className="px-4 py-3">
@@ -280,8 +416,11 @@ function AccountRow({ account }: { account: FunnelAccount }) {
         {/* Bio clicks */}
         <td className="px-4 py-3 text-right">
           <p className="text-sm font-semibold text-white">{fmt(gms?.clicks)}</p>
-          <div className="mt-0.5">
+          <div className="mt-0.5 flex flex-col items-end gap-0.5">
             <RateBadge rate={bioCtr} thresholds={[3, 1]} />
+            {gms && !gms.is_delta && (
+              <span className="text-[9px] text-zinc-600">total</span>
+            )}
           </div>
         </td>
 
@@ -303,55 +442,74 @@ function AccountRow({ account }: { account: FunnelAccount }) {
 
         {/* Chevron */}
         <td className="px-3 py-3 text-zinc-600">
-          <span
-            className="transition-transform inline-block"
-            style={{ transform: open ? "rotate(90deg)" : "rotate(0deg)" }}
-          >
-            ›
-          </span>
+          <span className="transition-transform inline-block" style={{ transform: open ? "rotate(90deg)" : "rotate(0deg)" }}>›</span>
         </td>
       </tr>
 
       {open && (
-        <tr className="bg-zinc-900/40 border-b border-zinc-800">
-          <td colSpan={6} className="px-6 py-4">
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm">
-              <div>
-                <p className="text-xs text-zinc-500 mb-1 uppercase tracking-wide">Avg Likes</p>
-                <p className="text-white font-medium">{fmt(ig.avg_likes)}</p>
-              </div>
-              <div>
-                <p className="text-xs text-zinc-500 mb-1 uppercase tracking-wide">Avg Views</p>
-                <p className="text-white font-medium">{fmt(ig.avg_views)}</p>
-              </div>
-              <div>
-                <p className="text-xs text-zinc-500 mb-1 uppercase tracking-wide">Avg Comments</p>
-                <p className="text-white font-medium">{fmt(ig.avg_comments)}</p>
-              </div>
-              <div>
-                <p className="text-xs text-zinc-500 mb-1 uppercase tracking-wide">Tier 1 Audience</p>
-                <p className="text-white font-medium">
-                  {account.gms?.tier1_pct != null ? `${account.gms.tier1_pct}%` : "—"}
-                </p>
-              </div>
-              <div>
-                <p className="text-xs text-zinc-500 mb-1 uppercase tracking-wide">Posts in DB</p>
-                <p className="text-white font-medium">{ig.total_posts_in_db}</p>
-              </div>
-              <div>
-                <p className="text-xs text-zinc-500 mb-1 uppercase tracking-wide">Total Track Clicks</p>
-                <p className="text-white font-medium">{fmt(track?.clicks_total)}</p>
-              </div>
-              <div>
-                <p className="text-xs text-zinc-500 mb-1 uppercase tracking-wide">Total Subs (OF link)</p>
-                <p className="text-white font-medium">{fmt(track?.subscribers_total)}</p>
-              </div>
-              {account.niche && (
-                <div>
-                  <p className="text-xs text-zinc-500 mb-1 uppercase tracking-wide">Niche</p>
-                  <p className="text-white font-medium">{account.niche}</p>
+        <tr className="bg-zinc-900/30 border-b border-zinc-800">
+          <td colSpan={6} className="px-6 py-5">
+            {/* Aggregate stats */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3 text-sm mb-5">
+              {[
+                { label: "Avg Views", value: fmt(ig.avg_views ?? ig.avg_plays) },
+                { label: "Avg Likes", value: fmt(ig.avg_likes) },
+                { label: "Avg Comments", value: fmt(ig.avg_comments) },
+                { label: "Tier 1", value: gms?.tier1_pct != null ? `${gms.tier1_pct}%` : "—" },
+                { label: "Posts DB", value: String(ig.total_posts_in_db) },
+                { label: "Track total", value: fmt(track?.clicks_total) },
+                { label: "Subs total", value: fmt(track?.subscribers_total) },
+              ].map(({ label, value }) => (
+                <div key={label} className="bg-zinc-800/60 rounded-lg px-3 py-2">
+                  <p className="text-[10px] text-zinc-500 uppercase tracking-wide">{label}</p>
+                  <p className="text-white font-semibold mt-0.5">{value}</p>
                 </div>
-              )}
+              ))}
+            </div>
+
+            {/* Reels / Posts grid */}
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-xs text-zinc-400 font-medium">
+                  Posts & Réels
+                  {posts !== null && <span className="text-zinc-600 ml-1">({posts.length})</span>}
+                </p>
+                <div className="flex items-center gap-1">
+                  {(["views", "likes", "er", "recent"] as const).map((s) => (
+                    <button
+                      key={s}
+                      onClick={(e) => { e.stopPropagation(); setSortPosts(s); }}
+                      className={`px-2 py-0.5 text-[10px] rounded border transition-all ${
+                        sortPosts === s
+                          ? "bg-zinc-700 border-zinc-600 text-white"
+                          : "border-zinc-700 text-zinc-500 hover:text-white"
+                      }`}
+                    >
+                      {s === "views" ? "Vues" : s === "likes" ? "Likes" : s === "er" ? "ER" : "Récent"}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {loadingPosts ? (
+                <div className="flex items-center gap-2 text-zinc-600 text-xs py-6 justify-center">
+                  <svg className="animate-spin w-3.5 h-3.5" viewBox="0 0 24 24" fill="none">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+                  </svg>
+                  Chargement…
+                </div>
+              ) : sortedPosts !== null && sortedPosts.length > 0 ? (
+                <div className="grid grid-cols-6 sm:grid-cols-8 md:grid-cols-10 lg:grid-cols-12 gap-1.5">
+                  {sortedPosts.map((post) => (
+                    <MiniPostCard key={post.id} post={post} />
+                  ))}
+                </div>
+              ) : sortedPosts !== null ? (
+                <p className="text-zinc-600 text-xs text-center py-6">
+                  Aucun post. Lance un sync sur la page Comptes.
+                </p>
+              ) : null}
             </div>
           </td>
         </tr>

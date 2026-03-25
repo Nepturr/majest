@@ -5,12 +5,10 @@ import { NextRequest, NextResponse } from "next/server";
 const TIER1 = new Set(["US", "GB", "CA", "AU", "DE", "FR"]);
 
 async function isAuthorized(req: NextRequest): Promise<boolean> {
-  // Allow Vercel cron (CRON_SECRET)
   const cronSecret = process.env.CRON_SECRET;
   const authHeader = req.headers.get("authorization");
   if (cronSecret && authHeader === `Bearer ${cronSecret}`) return true;
 
-  // Allow admin users
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return false;
@@ -33,11 +31,21 @@ async function getSettings(): Promise<Record<string, string>> {
   return r;
 }
 
+// Supabase returns joins as arrays — helper to unwrap
+function unwrapJoin<T>(v: T | T[] | null): T | null {
+  if (v == null) return null;
+  if (Array.isArray(v)) return v[0] ?? null;
+  return v;
+}
+
 /**
  * POST /api/collect/daily
- * Collects GMS time-series (last 30 days) and OFAPI tracking link snapshots
- * for all active Instagram accounts. Stores results in DB.
- * Triggered daily by Vercel cron at 06:00 UTC, or manually by admins.
+ * Collecte complète pour tous les comptes actifs :
+ *   1. GMS overview snapshot (total clicks + Tier 1 %) — sert au delta période
+ *   2. OFAPI tracking link snapshot (cumulatif, delta sur période)
+ *   3. Apify Instagram sync (profil + posts + métriques)
+ *
+ * Protégé : CRON_SECRET (Vercel) ou session admin.
  */
 export async function POST(req: NextRequest) {
   if (!(await isAuthorized(req))) {
@@ -47,7 +55,6 @@ export async function POST(req: NextRequest) {
   const adminClient = createAdminClient();
   const settings = await getSettings();
 
-  // Load all active Instagram accounts
   const { data: accounts } = await adminClient
     .from("instagram_accounts")
     .select(`
@@ -59,14 +66,18 @@ export async function POST(req: NextRequest) {
     .eq("status", "active");
 
   if (!accounts || accounts.length === 0) {
-    return NextResponse.json({ message: "No active accounts.", gms: 0, tracking: 0 });
+    return NextResponse.json({ message: "No active accounts.", gms: 0, tracking: 0, apify: 0 });
   }
 
   let gmsCollected = 0;
   let trackingCollected = 0;
+  let apifyPostsSaved = 0;
   const errors: string[] = [];
+  const details: Record<string, string[]> = {};
 
-  // ── GMS collection ───────────────────────────────────────────
+  // ── 1. GMS overview snapshot ─────────────────────────────────
+  // On stocke le total cumulatif + Tier1%. Le delta "cette semaine"
+  // est calculé dans /api/performance/funnel en comparant snapshots.
   if (settings.gms_api_key) {
     const gmsKey = settings.gms_api_key;
 
@@ -75,42 +86,8 @@ export async function POST(req: NextRequest) {
         .filter((a) => a.get_my_social_link_id)
         .map(async (account) => {
           const linkId = account.get_my_social_link_id!;
+          const accountDetails: string[] = [];
           try {
-            // Fetch time-series (daily clicks for the last 30 days)
-            const tsRes = await fetch(
-              `https://getmysocial.com/api/v2/analytics/time-series?scope=link&linkId=${linkId}&interval=day`,
-              { headers: { "x-api-key": gmsKey } }
-            );
-            if (tsRes.ok) {
-              const body = await tsRes.json();
-              const series: Array<{
-                date?: string;
-                day?: string;
-                clicks?: number;
-                uniqueVisitors?: number;
-                unique_visitors?: number;
-              }> = body.data ?? (Array.isArray(body) ? body : []);
-
-              if (series.length > 0) {
-                const rows = series
-                  .filter((item) => item.date ?? item.day)
-                  .map((item) => ({
-                    instagram_account_id: account.id,
-                    date: item.date ?? item.day,
-                    clicks: item.clicks ?? 0,
-                    unique_visitors: item.uniqueVisitors ?? item.unique_visitors ?? null,
-                  }));
-
-                if (rows.length > 0) {
-                  await adminClient
-                    .from("gms_daily_stats")
-                    .upsert(rows, { onConflict: "instagram_account_id,date" });
-                  gmsCollected++;
-                }
-              }
-            }
-
-            // Fetch overview (Tier 1 %)
             const [overviewRes, countriesRes] = await Promise.allSettled([
               fetch(`https://getmysocial.com/api/v2/analytics/overview?scope=link&linkId=${linkId}`, {
                 headers: { "x-api-key": gmsKey },
@@ -124,11 +101,17 @@ export async function POST(req: NextRequest) {
             let unique_visitors: number | null = null;
             let tier1_pct: number | null = null;
 
-            if (overviewRes.status === "fulfilled" && overviewRes.value.ok) {
-              const d = (await overviewRes.value.json())?.data ?? {};
-              total_clicks = d.totalClicks ?? d.total_clicks ?? null;
-              unique_visitors = d.uniqueVisitors ?? d.unique_visitors ?? null;
+            if (overviewRes.status === "fulfilled") {
+              if (overviewRes.value.ok) {
+                const d = (await overviewRes.value.json())?.data ?? {};
+                total_clicks = d.totalClicks ?? d.total_clicks ?? d.clicks ?? null;
+                unique_visitors = d.uniqueVisitors ?? d.unique_visitors ?? null;
+                accountDetails.push(`overview OK: ${total_clicks} clicks`);
+              } else {
+                accountDetails.push(`overview ERR: ${overviewRes.value.status}`);
+              }
             }
+
             if (countriesRes.status === "fulfilled" && countriesRes.value.ok) {
               const list: Array<{ country: string; visitors?: number; clicks?: number }> =
                 (await countriesRes.value.json())?.data ?? [];
@@ -141,37 +124,46 @@ export async function POST(req: NextRequest) {
               }
             }
 
-            await adminClient.from("gms_overview_snapshots").insert({
+            const { error: snapErr } = await adminClient.from("gms_overview_snapshots").insert({
               instagram_account_id: account.id,
               total_clicks,
               unique_visitors,
               tier1_pct,
             });
+
+            if (!snapErr) {
+              gmsCollected++;
+              accountDetails.push(`snapshot saved`);
+            } else {
+              accountDetails.push(`snapshot ERR: ${snapErr.message}`);
+            }
           } catch (e) {
-            errors.push(`GMS ${account.instagram_handle}: ${e}`);
+            const msg = `GMS ${account.instagram_handle}: ${e}`;
+            errors.push(msg);
+            accountDetails.push(`exception: ${e}`);
           }
+          details[`gms:${account.instagram_handle}`] = accountDetails;
         })
     );
   }
 
-  // ── OFAPI tracking link collection ───────────────────────────
+  // ── 2. OFAPI tracking link snapshot ──────────────────────────
   if (settings.ofapi_api_key) {
     const ofapiKey = settings.ofapi_api_key;
 
-    type AccountWithOf = (typeof accounts)[number] & {
-      of_account: { ofapi_account_id: string | null } | null;
-    };
+    // Unwrap Supabase join (can be array or object)
+    const byOfAccount = new Map<string, { accountId: string; trackingLinkId: string }[]>();
 
-    const byOfAccount = new Map<string, AccountWithOf[]>();
-    for (const account of accounts as AccountWithOf[]) {
-      const ofapiId = account.of_account?.ofapi_account_id;
+    for (const account of accounts) {
+      const ofAccount = unwrapJoin(account.of_account as { ofapi_account_id: string | null } | { ofapi_account_id: string | null }[] | null);
+      const ofapiId = ofAccount?.ofapi_account_id;
       if (!account.of_tracking_link_id || !ofapiId) continue;
       if (!byOfAccount.has(ofapiId)) byOfAccount.set(ofapiId, []);
-      byOfAccount.get(ofapiId)!.push(account);
+      byOfAccount.get(ofapiId)!.push({ accountId: account.id, trackingLinkId: account.of_tracking_link_id });
     }
 
     await Promise.allSettled(
-      [...byOfAccount.entries()].map(async ([ofapiId, igAccounts]) => {
+      [...byOfAccount.entries()].map(async ([ofapiId, entries]) => {
         try {
           const allLinks: Array<{ id: number; clicksCount: number; subscribersCount: number }> = [];
           let nextUrl: string | null = `https://app.onlyfansapi.com/api/${ofapiId}/tracking-links?limit=100`;
@@ -180,24 +172,27 @@ export async function POST(req: NextRequest) {
             const pageRes: Response = await fetch(nextUrl, {
               headers: { Authorization: `Bearer ${ofapiKey}` },
             });
-            if (!pageRes.ok) break;
+            if (!pageRes.ok) {
+              errors.push(`OFAPI ${ofapiId}: HTTP ${pageRes.status}`);
+              break;
+            }
             const body = await pageRes.json();
             allLinks.push(...(body.data?.list ?? []));
             nextUrl = body.data?.hasMore && body._pagination?.next_page
               ? body._pagination.next_page : null;
           }
 
-          for (const igAccount of igAccounts) {
-            const link = allLinks.find(
-              (l) => String(l.id) === String(igAccount.of_tracking_link_id)
-            );
+          for (const entry of entries) {
+            const link = allLinks.find((l) => String(l.id) === String(entry.trackingLinkId));
             if (link) {
               await adminClient.from("tracking_link_snapshots").insert({
-                instagram_account_id: igAccount.id,
+                instagram_account_id: entry.accountId,
                 clicks_count: link.clicksCount ?? 0,
                 subscribers_count: link.subscribersCount ?? 0,
               });
               trackingCollected++;
+            } else {
+              errors.push(`OFAPI: link ${entry.trackingLinkId} not found in ${ofapiId}`);
             }
           }
         } catch (e) {
@@ -207,116 +202,130 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // ── Apify Instagram sync (fire-and-wait, max 3 min) ─────────
-  let apifyCollected = 0;
+  // ── 3. Apify Instagram sync (fire all → poll max 150s) ───────
   if (settings.apify_api_key) {
     const apifyKey = settings.apify_api_key;
     const APIFY_ACTOR = "apify~instagram-scraper";
     const APIFY_BASE = "https://api.apify.com/v2";
+    const now = new Date().toISOString();
 
-    // Fire all runs in parallel
     const apifyRuns = await Promise.allSettled(
       accounts.map(async (account) => {
         const handle = account.instagram_handle.replace(/^@/, "");
-        const profileUrl = `https://www.instagram.com/${handle}/`;
         const runRes = await fetch(
           `${APIFY_BASE}/acts/${APIFY_ACTOR}/runs?token=${apifyKey}`,
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ directUrls: [profileUrl], resultsType: "details", resultsLimit: 50 }),
+            body: JSON.stringify({
+              directUrls: [`https://www.instagram.com/${handle}/`],
+              resultsType: "details",
+              resultsLimit: 50,
+            }),
           }
         );
-        if (!runRes.ok) throw new Error(`Apify start failed for ${handle}`);
+        if (!runRes.ok) throw new Error(`HTTP ${runRes.status}`);
         const data = await runRes.json();
         return { accountId: account.id, runId: (data?.data ?? data)?.id as string };
       })
     );
 
-    // Collect successful run IDs
-    const pendingRuns: { accountId: string; runId: string }[] = [];
+    const pending = new Map<string, string>(); // runId → accountId
     for (const r of apifyRuns) {
-      if (r.status === "fulfilled") pendingRuns.push(r.value);
+      if (r.status === "fulfilled") pending.set(r.value.runId, r.value.accountId);
+      else errors.push(`Apify start: ${r.reason}`);
     }
 
-    // Poll for completion (max 150 seconds)
     const deadline = Date.now() + 150_000;
-    const remaining = new Set(pendingRuns.map((r) => r.runId));
-    const runIdToAccountId = new Map(pendingRuns.map((r) => [r.runId, r.accountId]));
+    const remaining = new Set(pending.keys());
 
     while (remaining.size > 0 && Date.now() < deadline) {
-      await new Promise((res) => setTimeout(res, 8000));
-      await Promise.allSettled(
-        [...remaining].map(async (runId) => {
-          try {
-            const statusRes = await fetch(
-              `${APIFY_BASE}/acts/${APIFY_ACTOR}/runs/${runId}?token=${apifyKey}`
-            );
-            if (!statusRes.ok) return;
-            const statusData = await statusRes.json();
-            const run = statusData?.data ?? statusData;
-            if (run.status !== "SUCCEEDED" && run.status !== "FAILED") return;
-            remaining.delete(runId);
-            if (run.status !== "SUCCEEDED") return;
+      await new Promise((r) => setTimeout(r, 8000));
 
-            const accountId = runIdToAccountId.get(runId)!;
-            const itemsRes = await fetch(
-              `${APIFY_BASE}/datasets/${run.defaultDatasetId}/items?token=${apifyKey}&clean=true&format=json`
-            );
-            if (!itemsRes.ok) return;
-            const items = await itemsRes.json();
-            if (!items?.length) return;
+      await Promise.allSettled([...remaining].map(async (runId) => {
+        try {
+          const statusRes = await fetch(`${APIFY_BASE}/acts/${APIFY_ACTOR}/runs/${runId}?token=${apifyKey}`);
+          if (!statusRes.ok) return;
+          const run = (await statusRes.json())?.data ?? {};
+          if (run.status !== "SUCCEEDED" && run.status !== "FAILED") return;
+          remaining.delete(runId);
+          if (run.status !== "SUCCEEDED") return;
 
-            const profile = items[0];
-            await adminClient.from("instagram_account_snapshots").insert({
-              instagram_account_id: accountId,
-              followers_count: profile.followersCount ?? null,
-              following_count: profile.followsCount ?? null,
-              posts_count: profile.postsCount ?? null,
-              bio: profile.biography ?? null,
-              is_verified: profile.verified ?? false,
-              profile_pic_url: profile.profilePicUrlHD ?? profile.profilePicUrl ?? null,
-              apify_run_id: runId,
-            });
+          const accountId = pending.get(runId)!;
+          const itemsRes = await fetch(
+            `${APIFY_BASE}/datasets/${run.defaultDatasetId}/items?token=${apifyKey}&clean=true&format=json`
+          );
+          if (!itemsRes.ok) return;
+          const items = await itemsRes.json();
+          if (!items?.length) return;
 
-            for (const post of profile.latestPosts ?? []) {
-              if (!post.shortCode) continue;
-              let postType: string = "Image";
-              if (post.productType === "clips") postType = "Reel";
-              else if (post.type === "Video") postType = "Video";
-              else if (post.type === "Sidecar" || post.type === "GraphSidecar") postType = "Sidecar";
+          const profile = items[0];
 
-              const { data: upsertedPost } = await adminClient
-                .from("instagram_posts")
-                .upsert({ instagram_account_id: accountId, shortcode: post.shortCode, post_type: postType, url: post.url ?? `https://www.instagram.com/p/${post.shortCode}/`, caption: post.caption ?? null, thumbnail_url: post.displayUrl ?? null, posted_at: post.timestamp ?? null }, { onConflict: "shortcode", ignoreDuplicates: false })
-                .select("id")
-                .single();
+          // Account snapshot
+          await adminClient.from("instagram_account_snapshots").insert({
+            instagram_account_id: accountId,
+            followers_count: profile.followersCount ?? null,
+            following_count: profile.followsCount ?? null,
+            posts_count: profile.postsCount ?? null,
+            bio: profile.biography ?? null,
+            is_verified: profile.verified ?? false,
+            profile_pic_url: profile.profilePicUrlHD ?? profile.profilePicUrl ?? null,
+            apify_run_id: runId,
+          });
 
-              if (upsertedPost?.id) {
-                await adminClient.from("instagram_post_snapshots").insert({
-                  post_id: upsertedPost.id,
-                  likes_count: post.likesCount ?? null,
-                  comments_count: post.commentsCount ?? null,
-                  views_count: post.videoViewCount ?? null,
-                  plays_count: post.videoPlayCount ?? null,
-                  apify_run_id: runId,
-                });
-                apifyCollected++;
-              }
+          // Collect the shortcodes seen this run (for last_seen_at update)
+          const seenShortcodes: string[] = [];
+
+          for (const post of profile.latestPosts ?? []) {
+            if (!post.shortCode) continue;
+            seenShortcodes.push(post.shortCode);
+
+            let postType = "Image";
+            if (post.productType === "clips") postType = "Reel";
+            else if (post.productType === "igtv") postType = "Video";
+            else if ((post.type ?? "").toLowerCase() === "video") postType = "Video";
+            else if ((post.type ?? "").toLowerCase() === "sidecar") postType = "Sidecar";
+
+            const { data: upsertedPost } = await adminClient
+              .from("instagram_posts")
+              .upsert({
+                instagram_account_id: accountId,
+                shortcode: post.shortCode,
+                post_type: postType,
+                url: post.url ?? `https://www.instagram.com/p/${post.shortCode}/`,
+                caption: post.caption ?? null,
+                thumbnail_url: post.displayUrl ?? null,
+                posted_at: post.timestamp ?? null,
+                last_seen_at: now,
+              }, { onConflict: "shortcode", ignoreDuplicates: false })
+              .select("id")
+              .single();
+
+            if (upsertedPost?.id) {
+              await adminClient.from("instagram_post_snapshots").insert({
+                post_id: upsertedPost.id,
+                likes_count: post.likesCount ?? null,
+                comments_count: post.commentsCount ?? null,
+                views_count: post.videoViewCount ?? null,
+                plays_count: post.videoPlayCount ?? null,
+                apify_run_id: runId,
+              });
+              apifyPostsSaved++;
             }
-          } catch (e) {
-            errors.push(`Apify finalize ${runId}: ${e}`);
           }
-        })
-      );
+        } catch (e) {
+          errors.push(`Apify finalize ${runId}: ${e}`);
+        }
+      }));
     }
   }
 
   return NextResponse.json({
     message: "Collection complete.",
-    gms_accounts_collected: gmsCollected,
-    tracking_accounts_collected: trackingCollected,
-    apify_posts_saved: apifyCollected,
+    gms_collected: gmsCollected,
+    tracking_collected: trackingCollected,
+    apify_posts_saved: apifyPostsSaved,
+    details,
     errors: errors.length > 0 ? errors : undefined,
     collected_at: new Date().toISOString(),
   });
