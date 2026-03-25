@@ -142,8 +142,9 @@ export async function GET(
   }
 
   const datasetId: string = run.defaultDatasetId;
+  // clean=true élimine agressivement des items — on l'enlève et on pagine
   const itemsRes = await fetch(
-    `${APIFY_BASE}/datasets/${datasetId}/items?token=${apiKey}&clean=true&format=json`
+    `${APIFY_BASE}/datasets/${datasetId}/items?token=${apiKey}&format=json&limit=500`
   );
   if (!itemsRes.ok) {
     return NextResponse.json({ error: "Failed to fetch Apify dataset." }, { status: 502 });
@@ -151,7 +152,8 @@ export async function GET(
   const items: ApifyItem[] = await itemsRes.json();
 
   if (!items || items.length === 0) {
-    return NextResponse.json({ runId, status, snapshotSaved: false, postsSaved: 0 });
+    // Retourne aussi le datasetId pour diagnostic
+    return NextResponse.json({ runId, status, snapshotSaved: false, postsSaved: 0, datasetId, itemsRaw: 0 });
   }
 
   const adminClient = createAdminClient();
@@ -195,6 +197,8 @@ export async function GET(
     status,
     snapshotSaved,
     postsSaved,
+    itemsRaw: items.length,
+    datasetId,
     finishedAt: run.finishedAt ?? null,
   });
 }

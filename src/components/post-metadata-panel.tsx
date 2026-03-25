@@ -252,15 +252,12 @@ export function PostMetadataPanel({
       .then((d) => {
         if (d.metadata) {
           const loaded: PostMetadata = d.metadata;
-          // Préremplir duration_seconds depuis Apify si le champ est vide
-          if (loaded.duration_seconds == null && post.video_duration != null) {
-            loaded.duration_seconds = post.video_duration;
-          }
+          // Toujours écraser depuis Apify — valeur sûre, pas d'entrée manuelle
+          if (post.video_duration != null) loaded.duration_seconds = Math.round(post.video_duration);
           setMeta(loaded);
         } else {
           const empty = emptyMeta(post.id);
-          // Préremplir duration depuis Apify pour les nouvelles entrées
-          if (post.video_duration != null) empty.duration_seconds = post.video_duration;
+          if (post.video_duration != null) empty.duration_seconds = Math.round(post.video_duration);
           setMeta(empty);
         }
       })
@@ -430,14 +427,21 @@ export function PostMetadataPanel({
                 />
               </Field>
               <div className="grid grid-cols-2 gap-3">
-                <Field label="Durée (secondes)">
-                  <input
-                    type="number"
-                    value={meta.duration_seconds ?? ""}
-                    onChange={(e) => update("duration_seconds", e.target.value ? parseInt(e.target.value) : null)}
-                    placeholder="Ex : 30"
-                    className="w-full bg-zinc-800/60 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-zinc-500 focus:ring-1 focus:ring-zinc-500/20 transition-colors"
-                  />
+                <Field label="Durée">
+                  <div className="flex items-center gap-2 bg-zinc-800/40 border border-zinc-800 rounded-lg px-3 py-2 h-[38px]">
+                    {meta.duration_seconds != null ? (
+                      <>
+                        <span className="text-sm font-semibold text-white">
+                          {meta.duration_seconds >= 60
+                            ? `${Math.floor(meta.duration_seconds / 60)}m ${meta.duration_seconds % 60}s`
+                            : `${meta.duration_seconds}s`}
+                        </span>
+                        <span className="ml-auto text-[9px] text-zinc-600 bg-zinc-800 border border-zinc-700 rounded px-1.5 py-0.5 uppercase tracking-wide">API</span>
+                      </>
+                    ) : (
+                      <span className="text-xs text-zinc-600 italic">Sync Réels requis</span>
+                    )}
+                  </div>
                 </Field>
                 <Field label="Contraste modèle/fond">
                   <PillGroup

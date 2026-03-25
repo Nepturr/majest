@@ -456,7 +456,17 @@ export default function PerformancePage() {
   const [loading, setLoading] = useState(true);
   const [collecting, setCollecting] = useState(false);
   const [collectMsg, setCollectMsg] = useState<string | null>(null);
+  const [collectSources, setCollectSources] = useState<Set<string>>(new Set(["gms", "ofapi", "instagram"]));
   const abortRef = useRef<AbortController | null>(null);
+
+  function toggleSource(s: string) {
+    setCollectSources((prev) => {
+      const next = new Set(prev);
+      if (next.has(s)) { if (next.size > 1) next.delete(s); }
+      else next.add(s);
+      return next;
+    });
+  }
 
   const load = useCallback(async (p: Period) => {
     if (abortRef.current) abortRef.current.abort();
@@ -481,10 +491,18 @@ export default function PerformancePage() {
     setCollecting(true);
     setCollectMsg(null);
     try {
-      const res = await fetch("/api/collect/daily", { method: "POST" });
+      const res = await fetch("/api/collect/daily", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sources: [...collectSources] }),
+      });
       const json = await res.json();
       if (res.ok) {
-        setCollectMsg(`Collecte terminée — GMS: ${json.gms_accounts_collected ?? 0}, Tracking: ${json.tracking_accounts_collected ?? 0}`);
+        const parts = [];
+        if (collectSources.has("gms")) parts.push(`GMS: ${json.gms_accounts_collected ?? 0}`);
+        if (collectSources.has("ofapi")) parts.push(`OF: ${json.tracking_accounts_collected ?? 0}`);
+        if (collectSources.has("instagram")) parts.push(`IG: ${json.apify_posts_saved ?? 0} posts`);
+        setCollectMsg(`Collecte terminée — ${parts.join(", ")}`);
         load(period);
       } else {
         setCollectMsg(json.error ?? "Erreur lors de la collecte");
@@ -544,25 +562,46 @@ export default function PerformancePage() {
           </div>
 
           <div className="flex items-center gap-3 flex-wrap">
-            {/* Collect button */}
-            <button
-              onClick={handleCollect}
-              disabled={collecting}
-              className="text-sm px-3 py-1.5 rounded-lg border border-zinc-700 text-zinc-400 hover:text-white hover:border-zinc-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
-            >
-              {collecting ? (
-                <svg className="animate-spin w-3.5 h-3.5" viewBox="0 0 24 24" fill="none">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
-                </svg>
-              ) : (
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-3.5 h-3.5">
-                  <path d="M4 4v5h5M20 20v-5h-5"/>
-                  <path d="M4 9a9 9 0 0115 0M20 15a9 9 0 01-15 0"/>
-                </svg>
-              )}
-              {collecting ? "Collecte…" : "Collecter maintenant"}
-            </button>
+            {/* Collect — source toggles + button */}
+            <div className="flex items-center gap-1.5 bg-zinc-900 border border-zinc-800 rounded-xl px-2 py-1.5">
+              {([
+                { key: "instagram", label: "Instagram" },
+                { key: "gms",       label: "GMS" },
+                { key: "ofapi",     label: "OnlyFans" },
+              ] as const).map(({ key, label }) => (
+                <button
+                  key={key}
+                  onClick={() => toggleSource(key)}
+                  disabled={collecting}
+                  className={`px-2.5 py-1 text-xs rounded-lg font-medium border transition-all ${
+                    collectSources.has(key)
+                      ? "bg-blue-600/20 border-blue-500/40 text-blue-300"
+                      : "border-zinc-700 text-zinc-600 hover:text-zinc-400"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+              <div className="w-px h-4 bg-zinc-700 mx-1" />
+              <button
+                onClick={handleCollect}
+                disabled={collecting}
+                className="text-xs px-3 py-1 rounded-lg bg-zinc-700 hover:bg-zinc-600 text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5 font-medium"
+              >
+                {collecting ? (
+                  <svg className="animate-spin w-3 h-3" viewBox="0 0 24 24" fill="none">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+                  </svg>
+                ) : (
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-3 h-3">
+                    <path d="M4 4v5h5M20 20v-5h-5"/>
+                    <path d="M4 9a9 9 0 0115 0M20 15a9 9 0 01-15 0"/>
+                  </svg>
+                )}
+                {collecting ? "Collecte…" : "Go"}
+              </button>
+            </div>
 
             {/* Period selector */}
             <div className="flex items-center bg-zinc-900 border border-zinc-800 rounded-xl p-1 gap-0.5">

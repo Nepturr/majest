@@ -313,7 +313,7 @@ export default function AccountDetailPage() {
     }
   }, [activeMetaPost]);
 
-  async function runApifyScan(mode: "profile" | "reels"): Promise<{ status: string; postsSaved?: number; snapshotSaved?: boolean; error?: string } | null> {
+  async function runApifyScan(mode: "profile" | "reels"): Promise<{ status: string; postsSaved?: number; itemsRaw?: number; datasetId?: string; snapshotSaved?: boolean; error?: string } | null> {
     const res = await fetch(`/api/instagram/${id}/collect`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -363,8 +363,16 @@ export default function AccountDetailPage() {
       if (r?.error) {
         setScanResult(`Erreur scan : ${r.error}`);
       } else if (r?.status === "SUCCEEDED") {
-        setScanResult(`${r.postsSaved ?? 0} réels récupérés ✓`);
-        loadPosts();
+        const saved = r.postsSaved ?? 0;
+        const raw = r.itemsRaw ?? 0;
+        if (saved === 0 && raw === 0) {
+          setScanResult(`0 réels récupérés — dataset vide. Compte privé ou quota Apify atteint ? (datasetId: ${r.datasetId ?? "?"})`);
+        } else if (saved === 0 && raw > 0) {
+          setScanResult(`${raw} items reçus mais 0 sauvegardés (shortCode manquant ?)`);
+        } else {
+          setScanResult(`${saved} réels récupérés ✓`);
+          loadPosts();
+        }
       } else {
         setScanResult("Scan échoué — vérifie la clé Apify dans Admin");
       }

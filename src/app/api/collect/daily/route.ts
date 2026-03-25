@@ -55,6 +55,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  // sources: tableau de "gms" | "ofapi" | "instagram" — défaut = tout
+  const body = await req.json().catch(() => ({}));
+  const allSources = ["gms", "ofapi", "instagram"] as const;
+  type Source = typeof allSources[number];
+  const sourcesRaw: string[] = Array.isArray(body.sources) ? body.sources : allSources;
+  const sources = new Set<Source>(sourcesRaw.filter((s): s is Source => allSources.includes(s as Source)));
+
   const adminClient = createAdminClient();
   const settings = await getSettings();
 
@@ -79,9 +86,7 @@ export async function POST(req: NextRequest) {
   const details: Record<string, string[]> = {};
 
   // ── 1. GMS overview snapshot ─────────────────────────────────
-  // On stocke le total cumulatif + Tier1%. Le delta "cette semaine"
-  // est calculé dans /api/performance/funnel en comparant snapshots.
-  if (settings.gms_api_key) {
+  if (sources.has("gms") && settings.gms_api_key) {
     const gmsKey = settings.gms_api_key;
 
     await Promise.allSettled(
@@ -155,7 +160,7 @@ export async function POST(req: NextRequest) {
   }
 
   // ── 2. OFAPI tracking link snapshot ──────────────────────────
-  if (settings.ofapi_api_key) {
+  if (sources.has("ofapi") && settings.ofapi_api_key) {
     const ofapiKey = settings.ofapi_api_key;
 
     // Unwrap Supabase join (can be array or object)
@@ -212,7 +217,7 @@ export async function POST(req: NextRequest) {
   }
 
   // ── 3. Apify Instagram sync (fire all → poll max 150s) ───────
-  if (settings.apify_api_key) {
+  if (sources.has("instagram") && settings.apify_api_key) {
     const apifyKey = settings.apify_api_key;
     const APIFY_ACTOR = "apify~instagram-scraper";
     const APIFY_BASE = "https://api.apify.com/v2";
@@ -320,6 +325,15 @@ export async function POST(req: NextRequest) {
                 plays_count: post.videoPlayCount ?? null,
                 apify_run_id: runId,
               });
+              // Toujours écraser duration_seconds avec la valeur Apify (sûre)
+              if (post.videoDuration != null) {
+                await adminClient
+                  .from("instagram_post_metadata")
+                  .upsert(
+                    { post_id: upsertedPost.id, duration_seconds: Math.round(post.videoDuration) },
+                    { onConflict: "post_id", ignoreDuplicates: false }
+                  );
+              }
               apifyPostsSaved++;
             }
           }

@@ -1923,6 +1923,10 @@ function ApifyKeyCard() {
   const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
   const [showKey, setShowKey] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [debugHandle, setDebugHandle] = useState("");
+  const [debugging, setDebugging] = useState(false);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [debugResult, setDebugResult] = useState<any | null>(null);
 
   useEffect(() => {
     fetch("/api/admin/settings?keys=apify_api_key")
@@ -1965,6 +1969,16 @@ function ApifyKeyCard() {
       setTestResult({ ok: false, message: data.error ?? "Connection failed." });
     }
     setTesting(false);
+  };
+
+  const handleDebugReels = async () => {
+    if (!debugHandle.trim()) return;
+    setDebugging(true);
+    setDebugResult(null);
+    const res = await fetch(`/api/admin/apify/test?handle=${encodeURIComponent(debugHandle.trim())}`);
+    const data = await res.json();
+    setDebugResult(data);
+    setDebugging(false);
   };
 
   const masked = savedKey ? savedKey.slice(0, 6) + "••••••••••••••••" + savedKey.slice(-4) : "";
@@ -2055,6 +2069,35 @@ function ApifyKeyCard() {
       </div>
       {isDirty && savedKey && (
         <p className="text-[11px] text-warning">Save the key before testing.</p>
+      )}
+
+      {/* Debug reel scraper */}
+      {savedKey && !isDirty && (
+        <div className="border-t border-border pt-4 space-y-2">
+          <p className="text-[11px] text-muted-foreground font-medium uppercase tracking-wide">Debug reel scraper</p>
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={debugHandle}
+              onChange={(e) => setDebugHandle(e.target.value)}
+              placeholder="handle Instagram (ex: natgeo)"
+              className="flex-1 h-9 px-3 bg-background border border-border rounded-lg text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent/50 transition-all"
+            />
+            <button
+              onClick={handleDebugReels}
+              disabled={debugging || !debugHandle.trim()}
+              className="h-9 px-3 bg-card border border-border hover:bg-card-hover disabled:opacity-40 text-xs font-medium rounded-lg flex items-center gap-1.5 transition-colors whitespace-nowrap"
+            >
+              {debugging ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
+              {debugging ? "Test en cours…" : "Tester (5 réels)"}
+            </button>
+          </div>
+          {debugResult && (
+            <pre className="text-[10px] text-zinc-400 bg-zinc-950 border border-zinc-800 rounded-lg p-3 overflow-x-auto max-h-48 leading-relaxed">
+              {JSON.stringify(debugResult, null, 2)}
+            </pre>
+          )}
+        </div>
       )}
     </div>
   );
