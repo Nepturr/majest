@@ -172,7 +172,7 @@ export async function POST(req: NextRequest) {
     await Promise.allSettled(
       [...byOfAccount.entries()].map(async ([ofapiId, entries]) => {
         try {
-          const allLinks: Array<{ id: number; clicksCount: number; subscribersCount: number }> = [];
+          const allLinks: Array<{ id: number; clicksCount: number; subscribersCount: number; revenue?: { total?: number; revenuePerSubscriber?: number } }> = [];
           let nextUrl: string | null = `https://app.onlyfansapi.com/api/${ofapiId}/tracking-links?limit=100`;
 
           while (nextUrl) {
@@ -196,6 +196,8 @@ export async function POST(req: NextRequest) {
                 instagram_account_id: entry.accountId,
                 clicks_count: link.clicksCount ?? 0,
                 subscribers_count: link.subscribersCount ?? 0,
+                revenue_total: link.revenue?.total ?? null,
+                revenue_per_subscriber: link.revenue?.revenuePerSubscriber ?? null,
               });
               trackingCollected++;
             } else {

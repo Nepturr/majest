@@ -34,6 +34,8 @@ export interface FunnelAccount {
     subscribers_delta: number | null;
     clicks_total: number;
     subscribers_total: number;
+    revenue_total: number | null;        // revenus cumulatifs all-time (OFAPI)
+    revenue_per_subscriber: number | null; // LTV — revenu moyen par sub
     is_total: boolean;       // true = "depuis inception" → affiche le total all-time
     needs_more_data: boolean; // true = pas assez de snapshots pour calculer le delta
   } | null;
@@ -239,11 +241,11 @@ export async function GET(req: NextRequest) {
   // ── 5. Tracking link snapshots (latest + period-start delta) ──
   const { data: trackSnaps } = await adminClient
     .from("tracking_link_snapshots")
-    .select("instagram_account_id, clicks_count, subscribers_count, collected_at")
+    .select("instagram_account_id, clicks_count, subscribers_count, revenue_total, revenue_per_subscriber, collected_at")
     .in("instagram_account_id", accountIds)
     .order("collected_at", { ascending: false });
 
-  const latestTrack = new Map<string, { clicks_count: number; subscribers_count: number }>();
+  const latestTrack = new Map<string, { clicks_count: number; subscribers_count: number; revenue_total: number | null; revenue_per_subscriber: number | null }>();
   const periodStartTrack = new Map<string, { clicks_count: number; subscribers_count: number }>();
 
   for (const s of trackSnaps ?? []) {
@@ -251,6 +253,8 @@ export async function GET(req: NextRequest) {
       latestTrack.set(s.instagram_account_id, {
         clicks_count: s.clicks_count,
         subscribers_count: s.subscribers_count,
+        revenue_total: s.revenue_total ?? null,
+        revenue_per_subscriber: s.revenue_per_subscriber ?? null,
       });
     }
     if (!periodStartTrack.has(s.instagram_account_id) && s.collected_at <= startIso) {
@@ -349,8 +353,10 @@ export async function GET(req: NextRequest) {
             subscribers_delta: trackSubsDelta,
             clicks_total: trackLatest.clicks_count,
             subscribers_total: trackLatest.subscribers_count,
-            is_total: inception,          // true seulement pour "depuis inception"
-            needs_more_data: !hasPrevTrack && !inception, // pas assez de snapshots pour le delta
+            revenue_total: trackLatest.revenue_total,
+            revenue_per_subscriber: trackLatest.revenue_per_subscriber,
+            is_total: inception,
+            needs_more_data: !hasPrevTrack && !inception,
           }
         : null,
     };

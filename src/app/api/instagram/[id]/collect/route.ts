@@ -2,7 +2,8 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { NextRequest, NextResponse } from "next/server";
 
-const APIFY_ACTOR = "apify~instagram-scraper";
+const APIFY_PROFILE_ACTOR = "apify~instagram-scraper";
+const APIFY_REELS_ACTOR  = "apify~instagram-reel-scraper"; // scraper dédié réels
 const APIFY_BASE = "https://api.apify.com/v2";
 
 async function verifyAuth() {
@@ -59,13 +60,13 @@ export async function POST(
 
   const handle = igAccount.instagram_handle.replace(/^@/, "");
 
-  // Profile mode → détails + ~12 posts
-  // Reels mode   → onglet /reels/ → 200 réels
+  // Profile mode → instagram-scraper : détails profil + ~12 derniers posts
+  // Reels mode   → instagram-reel-scraper : jusqu'à 200 réels de l'onglet Réels
+  const actor = mode === "reels" ? APIFY_REELS_ACTOR : APIFY_PROFILE_ACTOR;
   const runPayload =
     mode === "reels"
       ? {
-          directUrls: [`https://www.instagram.com/${handle}/reels/`],
-          resultsType: "posts",
+          username: [handle],   // instagram-reel-scraper accepte un tableau de handles
           resultsLimit: 200,
         }
       : {
@@ -75,7 +76,7 @@ export async function POST(
         };
 
   const runRes = await fetch(
-    `${APIFY_BASE}/acts/${APIFY_ACTOR}/runs?token=${apiKey}`,
+    `${APIFY_BASE}/acts/${actor}/runs?token=${apiKey}`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -125,8 +126,9 @@ export async function GET(
     return NextResponse.json({ error: "Apify API key not configured." }, { status: 400 });
   }
 
+  // Utilise l'endpoint générique /runs/{runId} — fonctionne quel que soit l'actor
   const statusRes = await fetch(
-    `${APIFY_BASE}/acts/${APIFY_ACTOR}/runs/${runId}?token=${apiKey}`
+    `${APIFY_BASE}/runs/${runId}?token=${apiKey}`
   );
   if (!statusRes.ok) {
     return NextResponse.json({ error: "Failed to fetch run status from Apify." }, { status: 502 });
@@ -247,6 +249,17 @@ async function upsertPosts(
       });
 
     if (!postSnapErr) count++;
+
+    // Auto-persist duration_seconds dans les métadonnées créatives
+    if (post.videoDuration != null) {
+      const durationRounded = Math.round(post.videoDuration);
+      await adminClient
+        .from("instagram_post_metadata")
+        .upsert(
+          { post_id: upsertedPost.id, duration_seconds: durationRounded },
+          { onConflict: "post_id", ignoreDuplicates: false }
+        );
+    }
   }
   return count;
 }

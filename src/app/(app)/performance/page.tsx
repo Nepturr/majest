@@ -404,8 +404,17 @@ function AccountRow({ account }: { account: FunnelAccount }) {
 
       {/* LTV */}
       <td className="px-4 py-3 text-right">
-        <p className="text-sm font-semibold text-zinc-500">—</p>
-        <p className="text-[10px] text-zinc-700 mt-0.5">revenus à venir</p>
+        {track?.revenue_per_subscriber != null ? (
+          <>
+            <p className="text-sm font-semibold text-emerald-400">${track.revenue_per_subscriber.toFixed(2)}</p>
+            <p className="text-[10px] text-zinc-500 mt-0.5">{track.revenue_total != null ? `$${track.revenue_total.toFixed(0)} total` : "rev/sub"}</p>
+          </>
+        ) : (
+          <>
+            <p className="text-sm font-semibold text-zinc-600">—</p>
+            <p className="text-[10px] text-zinc-700 mt-0.5">sync OF req.</p>
+          </>
+        )}
       </td>
 
       {/* Détails */}
