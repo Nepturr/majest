@@ -90,7 +90,7 @@ export async function GET() {
     if (row.ofapi_account_id) {
       assignmentMap.set(row.ofapi_account_id, {
         modelId: row.model_id,
-        modelName: (row.models as { name: string } | null)?.name ?? "Unknown",
+        modelName: (() => { const m = row.models as unknown as { name: string }[] | { name: string } | null; return Array.isArray(m) ? (m[0]?.name ?? "Unknown") : (m?.name ?? "Unknown"); })(),
       });
     }
   }
