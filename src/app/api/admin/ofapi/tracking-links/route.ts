@@ -45,19 +45,19 @@ export async function GET(req: NextRequest) {
     `https://app.onlyfansapi.com/api/${accountId}/tracking-links?limit=100`;
 
   while (nextUrl) {
-    const res = await fetch(nextUrl, {
+    const pageRes = await fetch(nextUrl, {
       headers: { Authorization: `Bearer ${setting.value}` },
     });
 
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({}));
+    if (!pageRes.ok) {
+      const body = await pageRes.json().catch(() => ({}));
       return NextResponse.json(
-        { error: body?.message ?? `OFAPI error: HTTP ${res.status}` },
+        { error: body?.message ?? `OFAPI error: HTTP ${pageRes.status}` },
         { status: 502 }
       );
     }
 
-    const json = await res.json();
+    const json = await pageRes.json();
     const pageLinks: OFLink[] = json.data?.list ?? json.data ?? [];
     allLinks.push(...pageLinks);
 
