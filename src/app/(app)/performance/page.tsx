@@ -428,9 +428,15 @@ function AccountRow({ account }: { account: FunnelAccount }) {
         <td className="px-4 py-3 text-right">
           <p className="text-sm font-semibold text-white">{fmt(track?.clicks_delta)}</p>
           <div className="mt-0.5 flex flex-col items-end gap-0.5">
-            <RateBadge rate={trackCtr} thresholds={[30, 10]} />
-            {track?.is_total && (
-              <span className="text-[9px] text-amber-600/70">cumul</span>
+            {track?.needs_more_data ? (
+              <span className="text-[9px] text-zinc-600" title="Lance une 2ème collecte pour voir le delta de la période">2e collecte req.</span>
+            ) : (
+              <>
+                <RateBadge rate={trackCtr} thresholds={[30, 10]} />
+                {track?.is_total && (
+                  <span className="text-[9px] text-amber-600/70">since ever</span>
+                )}
+              </>
             )}
           </div>
         </td>
@@ -439,9 +445,15 @@ function AccountRow({ account }: { account: FunnelAccount }) {
         <td className="px-4 py-3 text-right">
           <p className="text-sm font-semibold text-white">{fmt(track?.subscribers_delta)}</p>
           <div className="mt-0.5 flex flex-col items-end gap-0.5">
-            <RateBadge rate={subRate} thresholds={[5, 2]} />
-            {track?.is_total && (
-              <span className="text-[9px] text-amber-600/70">cumul</span>
+            {track?.needs_more_data ? (
+              <span className="text-[9px] text-zinc-600" title="Lance une 2ème collecte pour voir le delta de la période">2e collecte req.</span>
+            ) : (
+              <>
+                <RateBadge rate={subRate} thresholds={[5, 2]} />
+                {track?.is_total && (
+                  <span className="text-[9px] text-amber-600/70">since ever</span>
+                )}
+              </>
             )}
           </div>
         </td>
@@ -594,9 +606,13 @@ export default function PerformancePage() {
   const totalBioClicks = accounts.reduce((s, a) => s + (a.gms?.clicks ?? 0), 0);
   const totalTrackClicks = accounts.reduce((s, a) => s + (a.tracking?.clicks_delta ?? 0), 0);
   const totalSubs = accounts.reduce((s, a) => s + (a.tracking?.subscribers_delta ?? 0), 0);
+  // Totaux all-time pour fallback d'affichage
+  const totalTrackClicksAllTime = accounts.reduce((s, a) => s + (a.tracking?.clicks_total ?? 0), 0);
+  const totalSubsAllTime = accounts.reduce((s, a) => s + (a.tracking?.subscribers_total ?? 0), 0);
   // Is any metric showing a total rather than a period delta?
   const gmsTotalMode = accounts.some((a) => a.gms && !a.gms.is_delta);
   const trackTotalMode = accounts.some((a) => a.tracking?.is_total);
+  const trackNeedsData = accounts.some((a) => a.tracking?.needs_more_data);
   const isInception = period === "inception";
 
   // Use views as top of funnel if available, otherwise followers
@@ -755,15 +771,15 @@ export default function PerformancePage() {
                 }
               />
               <KpiCard
-                label={trackTotalMode && !isInception ? "Track Clicks (total)" : "Track Clicks"}
-                value={fmt(totalTrackClicks)}
+                label={isInception ? "Track Clicks (all-time)" : "Track Clicks"}
+                value={trackNeedsData && !isInception ? fmt(totalTrackClicksAllTime) : fmt(totalTrackClicks)}
                 sub={
-                  totalTrackClicks === 0 && !trackTotalMode
-                    ? "Lance une collecte →"
+                  trackNeedsData && !isInception
+                    ? `Total all-time — delta dispo après 2ème collecte`
                     : globalTrackCtr != null
                       ? `CTR ${globalTrackCtr.toFixed(1)}%`
-                      : trackTotalMode && !isInception
-                        ? "Total cumulatif — 2e collecte pour le delta"
+                      : isInception
+                        ? "Cumul depuis le début"
                         : undefined
                 }
                 color="bg-violet-500/10 text-violet-400"
@@ -774,15 +790,15 @@ export default function PerformancePage() {
                 }
               />
               <KpiCard
-                label={trackTotalMode && !isInception ? "Subscribers (total)" : "Subscribers"}
-                value={fmt(totalSubs)}
+                label={isInception ? "Subscribers (all-time)" : "Subscribers"}
+                value={trackNeedsData && !isInception ? fmt(totalSubsAllTime) : fmt(totalSubs)}
                 sub={
-                  totalSubs === 0 && !trackTotalMode
-                    ? "Lance une collecte →"
+                  trackNeedsData && !isInception
+                    ? `Total all-time — delta dispo après 2ème collecte`
                     : globalSubRate != null
                       ? `Conv. ${globalSubRate.toFixed(1)}%`
-                      : trackTotalMode && !isInception
-                        ? "Total cumulatif — 2e collecte pour le delta"
+                      : isInception
+                        ? "Cumul depuis le début"
                         : undefined
                 }
                 color="bg-emerald-500/10 text-emerald-400"

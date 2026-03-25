@@ -34,7 +34,8 @@ export interface FunnelAccount {
     subscribers_delta: number | null;
     clicks_total: number;
     subscribers_total: number;
-    is_total: boolean; // true = cumul all-time (pas de snapshot antérieur ou période inception)
+    is_total: boolean;       // true = "depuis inception" → affiche le total all-time
+    needs_more_data: boolean; // true = pas assez de snapshots pour calculer le delta
   } | null;
 }
 
@@ -283,15 +284,25 @@ export async function GET(req: NextRequest) {
       ? followersCurrent - prevSnap.followers_count
       : null;
 
-    // Tracking : si pas de snapshot antérieur, on affiche le total (pas 0)
+    // Tracking OFAPI : cumuls all-time → delta = latest - snapshot_début_période
+    // "inception" → on affiche le total cumulatif (tout le passé)
+    // Autre période → delta réel si on a un snapshot antérieur, sinon null (pas assez de données)
     const hasPrevTrack = !!(trackLatest && trackPrev);
-    const trackClicksDelta = inception || !hasPrevTrack
-      ? (trackLatest?.clicks_count ?? null)   // total cumulatif
-      : Math.max(0, trackLatest!.clicks_count - trackPrev!.clicks_count);
+    const trackClicksDelta = !trackLatest
+      ? null
+      : inception
+        ? trackLatest.clicks_count
+        : hasPrevTrack
+          ? Math.max(0, trackLatest.clicks_count - trackPrev!.clicks_count)
+          : null; // 1ère collecte : pas de snapshot antérieur → ne pas afficher le total all-time
 
-    const trackSubsDelta = inception || !hasPrevTrack
-      ? (trackLatest?.subscribers_count ?? null)
-      : Math.max(0, trackLatest!.subscribers_count - trackPrev!.subscribers_count);
+    const trackSubsDelta = !trackLatest
+      ? null
+      : inception
+        ? trackLatest.subscribers_count
+        : hasPrevTrack
+          ? Math.max(0, trackLatest.subscribers_count - trackPrev!.subscribers_count)
+          : null;
 
     // Views : fallback to total when no period-start data
     const hasViewsDelta = !inception && agg?.hasViewData && agg.viewsAtStart > 0;
@@ -338,7 +349,8 @@ export async function GET(req: NextRequest) {
             subscribers_delta: trackSubsDelta,
             clicks_total: trackLatest.clicks_count,
             subscribers_total: trackLatest.subscribers_count,
-            is_total: inception || !hasPrevTrack,
+            is_total: inception,          // true seulement pour "depuis inception"
+            needs_more_data: !hasPrevTrack && !inception, // pas assez de snapshots pour le delta
           }
         : null,
     };
