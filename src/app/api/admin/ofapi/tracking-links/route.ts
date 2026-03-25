@@ -37,28 +37,36 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "OnlyFansAPI key not configured." }, { status: 400 });
   }
 
-  const res = await fetch(
-    `https://app.onlyfansapi.com/api/${accountId}/tracking-links`,
-    { headers: { Authorization: `Bearer ${setting.value}` } }
-  );
+  type OFLink = { id?: number | string; campaignName?: string; campaignUrl?: string; campaignCode?: number };
 
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    return NextResponse.json(
-      { error: body?.message ?? `OFAPI error: HTTP ${res.status}` },
-      { status: 502 }
-    );
+  // Fetch all pages — OFAPI uses offset pagination via _pagination.next_page
+  const allLinks: OFLink[] = [];
+  let nextUrl: string | null =
+    `https://app.onlyfansapi.com/api/${accountId}/tracking-links?limit=100`;
+
+  while (nextUrl) {
+    const res = await fetch(nextUrl, {
+      headers: { Authorization: `Bearer ${setting.value}` },
+    });
+
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      return NextResponse.json(
+        { error: body?.message ?? `OFAPI error: HTTP ${res.status}` },
+        { status: 502 }
+      );
+    }
+
+    const json = await res.json();
+    const pageLinks: OFLink[] = json.data?.list ?? json.data ?? [];
+    allLinks.push(...pageLinks);
+
+    // Follow next_page if there are more results
+    const hasMore = json.data?.hasMore ?? false;
+    nextUrl = hasMore ? (json._pagination?.next_page ?? null) : null;
   }
 
-  const json = await res.json();
-
-  // OFAPI response: { data: { list: [...], hasMore: bool }, _pagination: {...} }
-  const rawLinks: {
-    id?: number | string;
-    campaignName?: string;
-    campaignUrl?: string;
-    campaignCode?: number;
-  }[] = json.data?.list ?? json.data ?? json.tracking_links ?? json ?? [];
+  const rawLinks = allLinks;
 
   // Get already-assigned tracking link IDs from our DB
   const { data: assigned } = await adminClient
