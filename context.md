@@ -245,6 +245,15 @@ Chaque compte Instagram (`instagram_accounts`) connecte :
 
 ## Historique des Mises à Jour
 
+### v0.5.0 — 25 Mars 2026
+- Page Performance construite avec données réelles — funnel complet par compte (pas de mock)
+- Route GET /api/performance/funnel : agrège en parallèle IG (DB) + GMS API + OFAPI par compte
+- Route GET /api/dashboard/stats : stats réelles (total accounts, followers, posts, synced today)
+- Dashboard nettoyé : plus de mock-data, stats réelles, liens rapides vers Performance et Accounts
+- Funnel table : colonnes Followers / Bio Clicks (CTR) / Track Clicks (CTR) / Subscribers (rate), code couleur vert/jaune/rouge
+- Détail expandable par compte : engagement rate, avg likes/views/comments, Tier 1 audience %, détail de chaque étape du funnel
+- Thresholds de performance : Bio CTR >3%, Track CTR >30%, Sub rate >5%
+
 ### v0.4.1 — 25 Mars 2026
 - Accounts page enrichie : pfp réelle depuis Apify (profile_pic_url du dernier snapshot), followers count dans la colonne Account
 - Auto-sync Apify dès qu'un compte est ajouté (startSync déclenché immédiatement après création)
