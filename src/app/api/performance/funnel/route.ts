@@ -136,7 +136,7 @@ export async function GET(req: NextRequest) {
         .order("collected_at", { ascending: false })
     : { data: [] as Array<{ post_id: string; likes_count: number | null; comments_count: number | null; views_count: number | null; plays_count: number | null; collected_at: string }> };
 
-  const latestPostSnap = new Map<string, (typeof postSnaps)[number]>();
+  const latestPostSnap = new Map<string, NonNullable<typeof postSnaps>[number]>();
   for (const s of postSnaps ?? []) {
     if (!latestPostSnap.has(s.post_id)) latestPostSnap.set(s.post_id, s);
   }
