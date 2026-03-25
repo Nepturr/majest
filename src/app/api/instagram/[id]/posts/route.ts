@@ -40,7 +40,7 @@ export async function GET(
     .order("posted_at", { ascending: false })
     .limit(limit);
 
-  if (type && ["Image", "Video", "Sidecar"].includes(type)) {
+  if (type && ["Image", "Video", "Reel", "Sidecar"].includes(type)) {
     query = query.eq("post_type", type);
   }
 

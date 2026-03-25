@@ -237,7 +237,9 @@ function AccountRow({ account }: { account: FunnelAccount }) {
   const track = account.tracking;
 
   const followers = ig.followers_current;
-  const bioCtr = gms && followers ? (gms.clicks / followers) * 100 : null;
+  // CTR = clicks / views (if available) or clicks / followers
+  const funnelBase = ig.views_delta ?? followers;
+  const bioCtr = gms && funnelBase ? (gms.clicks / funnelBase) * 100 : null;
   const trackCtr = gms && gms.clicks > 0 ? ((track?.clicks_delta ?? 0) / gms.clicks) * 100 : null;
   const subRate = track && track.clicks_delta > 0 ? (track.subscribers_delta / track.clicks_delta) * 100 : null;
 
@@ -260,13 +262,18 @@ function AccountRow({ account }: { account: FunnelAccount }) {
           </div>
         </td>
 
-        {/* Followers */}
+        {/* Views / Followers */}
         <td className="px-4 py-3 text-right">
-          <p className="text-sm font-semibold text-white">{fmt(followers)}</p>
-          {ig.followers_delta != null && (
-            <p className={`text-xs mt-0.5 ${ig.followers_delta >= 0 ? "text-emerald-400" : "text-red-400"}`}>
-              {delta(ig.followers_delta)}
-            </p>
+          {ig.views_delta != null ? (
+            <>
+              <p className="text-sm font-semibold text-white">{fmt(ig.views_delta)} <span className="text-xs font-normal text-zinc-500">vues</span></p>
+              <p className="text-xs text-zinc-500 mt-0.5">{fmt(followers)} followers</p>
+            </>
+          ) : (
+            <>
+              <p className="text-sm font-semibold text-white">{fmt(followers)}</p>
+              <p className="text-xs text-zinc-600 mt-0.5">pas de vues</p>
+            </>
           )}
         </td>
 
@@ -417,22 +424,26 @@ export default function PerformancePage() {
 
   // Aggregate KPIs
   const totalFollowers = accounts.reduce((s, a) => s + (a.instagram.followers_current ?? 0), 0);
-  const totalFollowersDelta = accounts.reduce((s, a) => s + (a.instagram.followers_delta ?? 0), 0);
+  const totalViews = accounts.reduce((s, a) => s + (a.instagram.views_delta ?? 0), 0);
+  const hasViewData = accounts.some((a) => a.instagram.views_delta != null);
   const totalBioClicks = accounts.reduce((s, a) => s + (a.gms?.clicks ?? 0), 0);
   const totalTrackClicks = accounts.reduce((s, a) => s + (a.tracking?.clicks_delta ?? 0), 0);
   const totalSubs = accounts.reduce((s, a) => s + (a.tracking?.subscribers_delta ?? 0), 0);
 
-  const globalBioCtr = totalFollowers > 0 ? (totalBioClicks / totalFollowers) * 100 : null;
+  // Use views as top of funnel if available, otherwise followers
+  const funnelTop = hasViewData ? totalViews : totalFollowers;
+  const funnelTopLabel = hasViewData ? "Views" : "Followers";
+  const globalBioCtr = funnelTop > 0 ? (totalBioClicks / funnelTop) * 100 : null;
   const globalTrackCtr = totalBioClicks > 0 ? (totalTrackClicks / totalBioClicks) * 100 : null;
   const globalSubRate = totalTrackClicks > 0 ? (totalSubs / totalTrackClicks) * 100 : null;
 
   // Funnel chart stages
   const chartStages: ChartStage[] = [
-    { label: "Followers", value: totalFollowers, pct: 100 },
-    { label: "Bio Clicks", value: totalBioClicks, pct: totalFollowers > 0 ? (totalBioClicks / totalFollowers) * 100 : 0 },
-    { label: "Track Clicks", value: totalTrackClicks, pct: totalFollowers > 0 ? (totalTrackClicks / totalFollowers) * 100 : 0 },
-    { label: "Subscribers", value: totalSubs, pct: totalFollowers > 0 ? (totalSubs / totalFollowers) * 100 : 0 },
-  ].filter((s) => s.value > 0 || s.label === "Followers");
+    { label: funnelTopLabel, value: funnelTop, pct: 100 },
+    { label: "Bio Clicks", value: totalBioClicks, pct: funnelTop > 0 ? (totalBioClicks / funnelTop) * 100 : 0 },
+    { label: "Track Clicks", value: totalTrackClicks, pct: funnelTop > 0 ? (totalTrackClicks / funnelTop) * 100 : 0 },
+    { label: "Subscribers", value: totalSubs, pct: funnelTop > 0 ? (totalSubs / funnelTop) * 100 : 0 },
+  ].filter((s) => s.value > 0 || s.label === funnelTopLabel);
 
   return (
     <div className="min-h-screen bg-zinc-950 text-white">
@@ -540,15 +551,17 @@ export default function PerformancePage() {
             {/* ── KPI cards (like OF earnings) ─────────────────── */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-8">
               <KpiCard
-                label="Followers"
-                value={fmt(totalFollowers)}
-                sub={totalFollowersDelta !== 0 ? `${delta(totalFollowersDelta)} cette période` : undefined}
+                label={hasViewData ? "Views" : "Followers"}
+                value={hasViewData ? fmt(totalViews) : fmt(totalFollowers)}
+                sub={hasViewData
+                  ? `${fmt(totalFollowers)} followers au total`
+                  : "Sync un compte pour voir les vues"
+                }
                 color="bg-indigo-500/10 text-indigo-400"
                 icon={
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-5 h-5">
-                    <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/>
-                    <circle cx="9" cy="7" r="4"/>
-                    <path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/>
+                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                    <circle cx="12" cy="12" r="3"/>
                   </svg>
                 }
               />
@@ -615,9 +628,9 @@ export default function PerformancePage() {
                 {/* Stage summary row */}
                 <div className="flex gap-6 mb-6 flex-wrap">
                   <div>
-                    <p className="text-xs text-zinc-500">Sessions</p>
+                    <p className="text-xs text-zinc-500">{funnelTopLabel}</p>
                     <p className="text-sm font-semibold text-white">100%</p>
-                    <p className="text-xs text-zinc-500">{fmt(totalFollowers)}</p>
+                    <p className="text-xs text-zinc-500">{fmt(funnelTop)}</p>
                   </div>
                   <div className="text-zinc-700 self-center">›</div>
                   <div>
@@ -671,7 +684,7 @@ export default function PerformancePage() {
                     <thead>
                       <tr className="border-b border-zinc-800 text-xs text-zinc-500 uppercase tracking-wide">
                         <th className="px-4 py-2.5 text-left font-medium">Compte</th>
-                        <th className="px-4 py-2.5 text-right font-medium">Followers</th>
+                        <th className="px-4 py-2.5 text-right font-medium">Views / Followers</th>
                         <th className="px-4 py-2.5 text-right font-medium">Bio Clicks</th>
                         <th className="px-4 py-2.5 text-right font-medium">Track Clicks</th>
                         <th className="px-4 py-2.5 text-right font-medium">Subscribers</th>

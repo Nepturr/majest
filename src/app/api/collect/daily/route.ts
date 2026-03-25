@@ -27,7 +27,7 @@ async function getSettings(): Promise<Record<string, string>> {
   const { data } = await adminClient
     .from("settings")
     .select("key, value")
-    .in("key", ["gms_api_key", "ofapi_api_key"]);
+    .in("key", ["gms_api_key", "ofapi_api_key", "apify_api_key"]);
   const r: Record<string, string> = {};
   for (const row of data ?? []) r[row.key] = row.value;
   return r;
@@ -207,10 +207,116 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  // ── Apify Instagram sync (fire-and-wait, max 3 min) ─────────
+  let apifyCollected = 0;
+  if (settings.apify_api_key) {
+    const apifyKey = settings.apify_api_key;
+    const APIFY_ACTOR = "apify~instagram-scraper";
+    const APIFY_BASE = "https://api.apify.com/v2";
+
+    // Fire all runs in parallel
+    const apifyRuns = await Promise.allSettled(
+      accounts.map(async (account) => {
+        const handle = account.instagram_handle.replace(/^@/, "");
+        const profileUrl = `https://www.instagram.com/${handle}/`;
+        const runRes = await fetch(
+          `${APIFY_BASE}/acts/${APIFY_ACTOR}/runs?token=${apifyKey}`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ directUrls: [profileUrl], resultsType: "details", resultsLimit: 50 }),
+          }
+        );
+        if (!runRes.ok) throw new Error(`Apify start failed for ${handle}`);
+        const data = await runRes.json();
+        return { accountId: account.id, runId: (data?.data ?? data)?.id as string };
+      })
+    );
+
+    // Collect successful run IDs
+    const pendingRuns: { accountId: string; runId: string }[] = [];
+    for (const r of apifyRuns) {
+      if (r.status === "fulfilled") pendingRuns.push(r.value);
+    }
+
+    // Poll for completion (max 150 seconds)
+    const deadline = Date.now() + 150_000;
+    const remaining = new Set(pendingRuns.map((r) => r.runId));
+    const runIdToAccountId = new Map(pendingRuns.map((r) => [r.runId, r.accountId]));
+
+    while (remaining.size > 0 && Date.now() < deadline) {
+      await new Promise((res) => setTimeout(res, 8000));
+      await Promise.allSettled(
+        [...remaining].map(async (runId) => {
+          try {
+            const statusRes = await fetch(
+              `${APIFY_BASE}/acts/${APIFY_ACTOR}/runs/${runId}?token=${apifyKey}`
+            );
+            if (!statusRes.ok) return;
+            const statusData = await statusRes.json();
+            const run = statusData?.data ?? statusData;
+            if (run.status !== "SUCCEEDED" && run.status !== "FAILED") return;
+            remaining.delete(runId);
+            if (run.status !== "SUCCEEDED") return;
+
+            const accountId = runIdToAccountId.get(runId)!;
+            const itemsRes = await fetch(
+              `${APIFY_BASE}/datasets/${run.defaultDatasetId}/items?token=${apifyKey}&clean=true&format=json`
+            );
+            if (!itemsRes.ok) return;
+            const items = await itemsRes.json();
+            if (!items?.length) return;
+
+            const profile = items[0];
+            await adminClient.from("instagram_account_snapshots").insert({
+              instagram_account_id: accountId,
+              followers_count: profile.followersCount ?? null,
+              following_count: profile.followsCount ?? null,
+              posts_count: profile.postsCount ?? null,
+              bio: profile.biography ?? null,
+              is_verified: profile.verified ?? false,
+              profile_pic_url: profile.profilePicUrlHD ?? profile.profilePicUrl ?? null,
+              apify_run_id: runId,
+            });
+
+            for (const post of profile.latestPosts ?? []) {
+              if (!post.shortCode) continue;
+              let postType: string = "Image";
+              if (post.productType === "clips") postType = "Reel";
+              else if (post.type === "Video") postType = "Video";
+              else if (post.type === "Sidecar" || post.type === "GraphSidecar") postType = "Sidecar";
+
+              const { data: upsertedPost } = await adminClient
+                .from("instagram_posts")
+                .upsert({ instagram_account_id: accountId, shortcode: post.shortCode, post_type: postType, url: post.url ?? `https://www.instagram.com/p/${post.shortCode}/`, caption: post.caption ?? null, thumbnail_url: post.displayUrl ?? null, posted_at: post.timestamp ?? null }, { onConflict: "shortcode", ignoreDuplicates: false })
+                .select("id")
+                .single();
+
+              if (upsertedPost?.id) {
+                await adminClient.from("instagram_post_snapshots").insert({
+                  post_id: upsertedPost.id,
+                  likes_count: post.likesCount ?? null,
+                  comments_count: post.commentsCount ?? null,
+                  views_count: post.videoViewCount ?? null,
+                  plays_count: post.videoPlayCount ?? null,
+                  apify_run_id: runId,
+                });
+                apifyCollected++;
+              }
+            }
+          } catch (e) {
+            errors.push(`Apify finalize ${runId}: ${e}`);
+          }
+        })
+      );
+    }
+  }
+
   return NextResponse.json({
     message: "Collection complete.",
     gms_accounts_collected: gmsCollected,
     tracking_accounts_collected: trackingCollected,
+    apify_posts_saved: apifyCollected,
     errors: errors.length > 0 ? errors : undefined,
     collected_at: new Date().toISOString(),
   });

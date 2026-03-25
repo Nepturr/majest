@@ -14,6 +14,8 @@ export interface FunnelAccount {
   instagram: {
     followers_current: number | null;
     followers_delta: number | null;
+    views_current: number | null;   // total views (cumulative latest)
+    views_delta: number | null;     // new views during the period
     profile_pic_url: string | null;
     avg_likes: number | null;
     avg_comments: number | null;
@@ -137,20 +139,47 @@ export async function GET(req: NextRequest) {
     : { data: [] as Array<{ post_id: string; likes_count: number | null; comments_count: number | null; views_count: number | null; plays_count: number | null; collected_at: string }> };
 
   const latestPostSnap = new Map<string, NonNullable<typeof postSnaps>[number]>();
+  const periodStartPostSnap = new Map<string, NonNullable<typeof postSnaps>[number]>();
   for (const s of postSnaps ?? []) {
     if (!latestPostSnap.has(s.post_id)) latestPostSnap.set(s.post_id, s);
+    // Closest snapshot at or before period start
+    if (!periodStartPostSnap.has(s.post_id) && s.collected_at <= startIso) {
+      periodStartPostSnap.set(s.post_id, s);
+    }
   }
 
-  interface IgAgg { total: number; sumL: number; cntL: number; sumC: number; cntC: number; sumV: number; cntV: number; sumP: number; cntP: number; }
+  interface IgAgg {
+    total: number;
+    sumL: number; cntL: number;
+    sumC: number; cntC: number;
+    sumV: number; cntV: number;
+    sumP: number; cntP: number;
+    viewsCurrent: number;   // sum of views from latest snapshots (cumulative)
+    viewsAtStart: number;   // sum of views from period-start snapshots
+    hasViewData: boolean;
+  }
   const igAgg = new Map<string, IgAgg>();
   for (const post of posts ?? []) {
     const snap = latestPostSnap.get(post.id);
-    const a = igAgg.get(post.instagram_account_id) ?? { total: 0, sumL: 0, cntL: 0, sumC: 0, cntC: 0, sumV: 0, cntV: 0, sumP: 0, cntP: 0 };
+    const prevSnap = periodStartPostSnap.get(post.id);
+    const a = igAgg.get(post.instagram_account_id) ?? {
+      total: 0, sumL: 0, cntL: 0, sumC: 0, cntC: 0,
+      sumV: 0, cntV: 0, sumP: 0, cntP: 0,
+      viewsCurrent: 0, viewsAtStart: 0, hasViewData: false,
+    };
     a.total++;
     if (snap?.likes_count != null) { a.sumL += snap.likes_count; a.cntL++; }
     if (snap?.comments_count != null) { a.sumC += snap.comments_count; a.cntC++; }
     if (snap?.views_count != null) { a.sumV += snap.views_count; a.cntV++; }
     if (snap?.plays_count != null) { a.sumP += snap.plays_count; a.cntP++; }
+    // Views delta: use views_count, fallback to plays_count
+    const v = snap?.views_count ?? snap?.plays_count;
+    if (v != null) {
+      a.viewsCurrent += v;
+      a.hasViewData = true;
+    }
+    const vPrev = prevSnap?.views_count ?? prevSnap?.plays_count;
+    if (vPrev != null) a.viewsAtStart += vPrev;
     igAgg.set(post.instagram_account_id, a);
   }
 
@@ -248,6 +277,8 @@ export async function GET(req: NextRequest) {
       instagram: {
         followers_current: followersCurrent,
         followers_delta: followersDelta,
+        views_current: agg?.hasViewData ? agg.viewsCurrent : null,
+        views_delta: agg?.hasViewData ? Math.max(0, agg.viewsCurrent - agg.viewsAtStart) : null,
         profile_pic_url: snap?.profile_pic_url ?? null,
         avg_likes: agg && agg.cntL > 0 ? Math.round(agg.sumL / agg.cntL) : null,
         avg_comments: agg && agg.cntC > 0 ? Math.round(agg.sumC / agg.cntC) : null,

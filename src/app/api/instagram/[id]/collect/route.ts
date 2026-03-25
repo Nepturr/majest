@@ -169,7 +169,7 @@ export async function GET(
   for (const post of posts) {
     if (!post.shortCode) continue;
 
-    const postType = mapPostType(post.type);
+    const postType = mapPostType(post);
 
     // Upsert du post (structure invariante)
     const { data: upsertedPost } = await adminClient
@@ -219,6 +219,7 @@ export async function GET(
 interface ApifyPost {
   shortCode?: string;
   type?: string;
+  productType?: string; // "clips" = Reel, "igtv" = IGTV, "feed" = standard
   url?: string;
   caption?: string;
   displayUrl?: string;
@@ -242,9 +243,11 @@ interface ApifyInstagramProfile {
   latestPosts?: ApifyPost[];
 }
 
-function mapPostType(type?: string): "Image" | "Video" | "Sidecar" {
-  if (!type) return "Image";
-  const t = type.toLowerCase();
+function mapPostType(post: ApifyPost): "Image" | "Video" | "Reel" | "Sidecar" {
+  // productType is the most reliable signal from Apify
+  if (post.productType === "clips") return "Reel";
+  if (post.productType === "igtv") return "Video";
+  const t = (post.type ?? "").toLowerCase();
   if (t === "video" || t === "reel") return "Video";
   if (t === "sidecar" || t === "graphsidecar") return "Sidecar";
   return "Image";

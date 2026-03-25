@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
+import Link from "next/link";
 import { Header } from "@/components/header";
 import { ProtectedPage } from "@/components/protected-page";
 import type {
@@ -1201,6 +1202,13 @@ export default function AccountsPage() {
                         {/* Actions */}
                         <td className="px-5 py-3.5" onClick={(e) => e.stopPropagation()}>
                           <div className="flex items-center gap-1 justify-end">
+                            <Link
+                              href={`/accounts/${account.id}`}
+                              title="Détails du compte"
+                              className="p-1.5 rounded-lg hover:bg-accent/10 text-muted-foreground hover:text-accent-light transition-colors"
+                            >
+                              <BarChart2 className="w-3.5 h-3.5" />
+                            </Link>
                             <button
                               onClick={(e) => startSync(account.id, e)}
                               disabled={sync === "syncing"}
