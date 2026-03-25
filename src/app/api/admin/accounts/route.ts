@@ -60,7 +60,8 @@ export async function POST(req: NextRequest) {
     .maybeSingle();
 
   if (existing) {
-    const modelName = (existing.models as { name: string } | null)?.name ?? "another model";
+    const modelsRaw = existing.models as unknown as { name: string }[] | { name: string } | null;
+    const modelName = Array.isArray(modelsRaw) ? (modelsRaw[0]?.name ?? "another model") : (modelsRaw?.name ?? "another model");
     return NextResponse.json(
       { error: `This account is already linked to ${modelName}.` },
       { status: 409 }
