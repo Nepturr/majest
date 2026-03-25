@@ -313,7 +313,7 @@ export default function AccountDetailPage() {
     }
   }, [activeMetaPost]);
 
-  async function runApifyScan(mode: "profile" | "reels"): Promise<{ status: string; postsSaved?: number; itemsRaw?: number; datasetId?: string; snapshotSaved?: boolean; error?: string } | null> {
+  async function runApifyScan(mode: "profile" | "reels"): Promise<{ status: string; postsSaved?: number; itemsRaw?: number; datasetId?: string; errors?: string[]; snapshotSaved?: boolean; error?: string } | null> {
     const res = await fetch(`/api/instagram/${id}/collect`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -366,9 +366,10 @@ export default function AccountDetailPage() {
         const saved = r.postsSaved ?? 0;
         const raw = r.itemsRaw ?? 0;
         if (saved === 0 && raw === 0) {
-          setScanResult(`0 réels récupérés — dataset vide. Compte privé ou quota Apify atteint ? (datasetId: ${r.datasetId ?? "?"})`);
+          setScanResult(`0 réels récupérés — dataset vide (compte privé ou quota Apify atteint ?)`);
         } else if (saved === 0 && raw > 0) {
-          setScanResult(`${raw} items reçus mais 0 sauvegardés (shortCode manquant ?)`);
+          const firstErr = r.errors?.[0] ?? "raison inconnue";
+          setScanResult(`${raw} items reçus, 0 sauvegardés — ${firstErr}`);
         } else {
           setScanResult(`${saved} réels récupérés ✓`);
           loadPosts();

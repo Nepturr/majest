@@ -159,6 +159,7 @@ export async function GET(
   const adminClient = createAdminClient();
   let snapshotSaved = false;
   let postsSaved = 0;
+  let upsertErrors: string[] = [];
 
   // Detect mode: profile scan has `followersCount` at root
   const isProfileScan = "followersCount" in items[0] || "latestPosts" in items[0];
@@ -183,13 +184,16 @@ export async function GET(
     if (!snapErr) snapshotSaved = true;
 
     const posts: ApifyPost[] = profile.latestPosts ?? [];
-    postsSaved = await upsertPosts(adminClient, id, runId, posts);
+    const result = await upsertPosts(adminClient, id, runId, posts);
+    postsSaved = result.postsSaved;
+    upsertErrors = result.errors;
   } else {
     // ── Reels / posts scan ────────────────────────────────────
-    // items IS the posts array directly
     const posts = items as ApifyPost[];
-    postsSaved = await upsertPosts(adminClient, id, runId, posts);
-    snapshotSaved = false; // no profile snapshot in reels mode
+    const result = await upsertPosts(adminClient, id, runId, posts);
+    postsSaved = result.postsSaved;
+    upsertErrors = result.errors;
+    snapshotSaved = false;
   }
 
   return NextResponse.json({
@@ -199,12 +203,14 @@ export async function GET(
     postsSaved,
     itemsRaw: items.length,
     datasetId,
+    // Premiers erreurs pour diagnostic (max 5)
+    errors: upsertErrors.slice(0, 5),
     finishedAt: run.finishedAt ?? null,
   });
 }
 
 // ─────────────────────────────────────────────────────────────
-// Helper: upsert posts + snapshots, returns count saved
+// Helper: upsert posts + snapshots
 // ─────────────────────────────────────────────────────────────
 async function upsertPosts(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -212,21 +218,28 @@ async function upsertPosts(
   accountId: string,
   runId: string,
   posts: ApifyPost[]
-): Promise<number> {
-  let count = 0;
+): Promise<{ postsSaved: number; errors: string[] }> {
+  let postsSaved = 0;
+  const errors: string[] = [];
+
   for (const post of posts) {
-    if (!post.shortCode) continue;
+    // Le champ peut être shortCode (camelCase) ou shortcode (lowercase selon l'acteur)
+    const sc = post.shortCode ?? (post as Record<string, unknown>).shortcode as string | undefined;
+    if (!sc) {
+      errors.push(`item sans shortCode: ${JSON.stringify(Object.keys(post))}`);
+      continue;
+    }
 
     const postType = mapPostType(post);
 
-    const { data: upsertedPost } = await adminClient
+    const { data: upsertedPost, error: upsertErr } = await adminClient
       .from("instagram_posts")
       .upsert(
         {
           instagram_account_id: accountId,
-          shortcode: post.shortCode,
+          shortcode: sc,
           post_type: postType,
-          url: post.url ?? `https://www.instagram.com/p/${post.shortCode}/`,
+          url: post.url ?? `https://www.instagram.com/p/${sc}/`,
           caption: post.caption ?? null,
           thumbnail_url: post.displayUrl ?? null,
           posted_at: post.timestamp ?? null,
@@ -239,9 +252,12 @@ async function upsertPosts(
       .select("id")
       .single();
 
-    if (!upsertedPost?.id) continue;
+    if (upsertErr || !upsertedPost?.id) {
+      errors.push(`upsert post ${sc}: ${upsertErr?.message ?? "no id returned"}`);
+      continue;
+    }
 
-    const { error: postSnapErr } = await adminClient
+    const { error: snapErr } = await adminClient
       .from("instagram_post_snapshots")
       .insert({
         post_id: upsertedPost.id,
@@ -252,20 +268,26 @@ async function upsertPosts(
         apify_run_id: runId,
       });
 
-    if (!postSnapErr) count++;
+    if (snapErr) {
+      // Snapshot en doublon (même run déjà sauvegardé) — on ignore, le post est ok
+      if (!snapErr.message?.includes("duplicate") && !snapErr.code?.includes("23505")) {
+        errors.push(`snapshot ${sc}: ${snapErr.message}`);
+      }
+    }
 
-    // Auto-persist duration_seconds dans les métadonnées créatives
+    postsSaved++;
+
+    // Auto-persist duration_seconds
     if (post.videoDuration != null) {
-      const durationRounded = Math.round(post.videoDuration);
       await adminClient
         .from("instagram_post_metadata")
         .upsert(
-          { post_id: upsertedPost.id, duration_seconds: durationRounded },
+          { post_id: upsertedPost.id, duration_seconds: Math.round(post.videoDuration) },
           { onConflict: "post_id", ignoreDuplicates: false }
         );
     }
   }
-  return count;
+  return { postsSaved, errors };
 }
 
 // ── Types ────────────────────────────────────────────────────
