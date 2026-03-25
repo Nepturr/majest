@@ -856,6 +856,7 @@ function ApiTab() {
         </p>
       </div>
       <GetMySocialKeyCard />
+      <OnlyFansApiKeyCard />
     </div>
   );
 }
@@ -980,6 +981,152 @@ function GetMySocialKeyCard() {
       )}
 
       {/* Actions */}
+      <div className="flex gap-2">
+        <button
+          onClick={handleSave}
+          disabled={saving || !apiKey.trim() || !isDirty}
+          className="h-9 px-4 bg-accent hover:bg-accent-dark disabled:opacity-40 text-white text-sm font-medium rounded-lg flex items-center gap-2 transition-colors"
+        >
+          {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : saved ? <Check className="w-3.5 h-3.5" /> : null}
+          {saved ? "Saved!" : "Save Key"}
+        </button>
+        <button
+          onClick={handleTest}
+          disabled={testing || !savedKey || isDirty}
+          className="h-9 px-4 bg-card border border-border hover:bg-card-hover disabled:opacity-40 text-sm font-medium rounded-lg flex items-center gap-2 transition-colors"
+          title={isDirty ? "Save the key first before testing" : ""}
+        >
+          {testing
+            ? <Loader2 className="w-3.5 h-3.5 animate-spin text-muted-foreground" />
+            : <RefreshCw className="w-3.5 h-3.5 text-muted-foreground" />
+          }
+          Test connection
+        </button>
+      </div>
+      {isDirty && savedKey && (
+        <p className="text-[11px] text-warning">Save the key before testing.</p>
+      )}
+    </div>
+  );
+}
+
+/* ─── OnlyFansAPI Key Card ─── */
+function OnlyFansApiKeyCard() {
+  const [apiKey, setApiKey] = useState("");
+  const [savedKey, setSavedKey] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
+  const [showKey, setShowKey] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/admin/settings?keys=ofapi_api_key")
+      .then((r) => r.json())
+      .then((d) => {
+        const key = d.settings?.ofapi_api_key ?? "";
+        setSavedKey(key);
+        setApiKey(key);
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
+  }, []);
+
+  const handleSave = async () => {
+    setSaving(true);
+    setTestResult(null);
+    const res = await fetch("/api/admin/settings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ key: "ofapi_api_key", value: apiKey.trim() }),
+    });
+    if (res.ok) {
+      setSavedKey(apiKey.trim());
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    }
+    setSaving(false);
+  };
+
+  const handleTest = async () => {
+    setTesting(true);
+    setTestResult(null);
+    const res = await fetch("/api/admin/ofapi/test");
+    const data = await res.json();
+    if (res.ok) {
+      const balance = data.balance != null ? ` — ${data.balance.toLocaleString()} credits remaining` : "";
+      setTestResult({ ok: true, message: `Connected${balance}.` });
+    } else {
+      setTestResult({ ok: false, message: data.error ?? "Connection failed." });
+    }
+    setTesting(false);
+  };
+
+  const masked = savedKey ? savedKey.slice(0, 6) + "••••••••••••••••" + savedKey.slice(-4) : "";
+  const isDirty = apiKey.trim() !== savedKey;
+
+  return (
+    <div className="bg-card border border-border rounded-xl p-5 space-y-4">
+      <div className="flex items-start gap-3">
+        <div className="w-10 h-10 rounded-lg bg-accent/10 border border-accent/20 flex items-center justify-center shrink-0">
+          <Key className="w-5 h-5 text-accent-light" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-semibold">OnlyFansAPI</p>
+          <p className="text-xs text-muted-foreground">
+            Earnings, subscribers, and tracking link stats per OF account.
+          </p>
+        </div>
+        {savedKey && !isDirty && (
+          <span className="inline-flex items-center gap-1.5 text-xs font-medium text-success bg-success/10 border border-success/20 px-2.5 py-1 rounded-full shrink-0">
+            <span className="w-1.5 h-1.5 rounded-full bg-success" />
+            Connected
+          </span>
+        )}
+      </div>
+
+      {loading ? (
+        <div className="h-11 bg-background border border-border rounded-lg animate-pulse" />
+      ) : (
+        <div className="relative">
+          <Key className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+          <input
+            type={showKey ? "text" : "password"}
+            value={apiKey}
+            onChange={(e) => { setApiKey(e.target.value); setTestResult(null); }}
+            placeholder="Paste your OnlyFansAPI key…"
+            className="w-full h-11 pl-10 pr-20 bg-background border border-border rounded-lg text-sm font-mono placeholder:text-muted-foreground placeholder:font-sans focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent/50 transition-all"
+          />
+          <button
+            type="button"
+            onClick={() => setShowKey((v) => !v)}
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground hover:text-foreground transition-colors"
+          >
+            {showKey ? "Hide" : "Show"}
+          </button>
+        </div>
+      )}
+
+      {savedKey && !isDirty && (
+        <p className="text-[11px] text-muted-foreground font-mono">{masked}</p>
+      )}
+
+      {testResult && (
+        <div className={cn(
+          "flex items-center gap-2 text-sm px-3 py-2.5 rounded-lg border",
+          testResult.ok
+            ? "bg-success/10 text-success border-success/20"
+            : "bg-danger/10 text-danger border-danger/20"
+        )}>
+          {testResult.ok
+            ? <CheckCircle2 className="w-4 h-4 shrink-0" />
+            : <AlertCircle className="w-4 h-4 shrink-0" />
+          }
+          {testResult.message}
+        </div>
+      )}
+
       <div className="flex gap-2">
         <button
           onClick={handleSave}

@@ -38,6 +38,20 @@ L'outil doit être :
 
 ## APIs externes
 
+### OnlyFansAPI (onlyfansapi.com)
+- Base URL : `https://app.onlyfansapi.com/api`
+- Auth : header `Authorization: Bearer {ofapi_api_key}` (clé stockée dans `settings.ofapi_api_key`)
+- Système de crédits : 1 crédit/requête non-cachée, 0 pour cachée
+- Les endpoints account-spécifiques sont préfixés `/api/{account_id}/...` (ex: `acct_XXXXXXXX`)
+- Le `account_id` OFAPI sera stocké sur le modèle `Account` (champ `ofapi_account_id`) lors de la feature "Ajouter un compte"
+- Endpoints clés :
+  - `GET /api/{account_id}/earning-statistics` — Revenue total + time series
+  - `GET /api/{account_id}/fans/latest` — Derniers subscribers (nouveaux + renouvellements)
+  - `GET /api/{account_id}/fans/active` — Subscribers actifs
+  - `GET /api/{account_id}/tracking-links` — Performance des tracking links
+- Response structure : `{ data: {...}, _meta: { _credits, _cache, _rate_limits }, _pagination?: { next_page } }`
+- Test de connexion via `POST /api/client-sessions` → `GET /api/admin/ofapi/test`
+
 ### GetMySocial API v2
 - Base URL : `https://getmysocial.com`
 - Auth : header `x-api-key` (clé stockée dans `settings.gms_api_key`, jamais exposée côté client)
