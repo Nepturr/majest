@@ -30,7 +30,31 @@ export async function GET(req: NextRequest) {
     .order("created_at", { ascending: false });
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json({ accounts: data ?? [] });
+
+  const accounts = data ?? [];
+  if (accounts.length === 0) return NextResponse.json({ accounts: [] });
+
+  // Enrich with latest snapshot per account (2 queries, O(1) memory)
+  const accountIds = accounts.map((a) => a.id);
+  const { data: snapshots } = await adminClient
+    .from("instagram_account_snapshots")
+    .select("instagram_account_id, followers_count, following_count, posts_count, profile_pic_url, collected_at")
+    .in("instagram_account_id", accountIds)
+    .order("collected_at", { ascending: false });
+
+  const latestByAccount = new Map<string, (typeof snapshots)[number]>();
+  for (const snap of snapshots ?? []) {
+    if (!latestByAccount.has(snap.instagram_account_id)) {
+      latestByAccount.set(snap.instagram_account_id, snap);
+    }
+  }
+
+  const enriched = accounts.map((account) => ({
+    ...account,
+    latest_snapshot: latestByAccount.get(account.id) ?? null,
+  }));
+
+  return NextResponse.json({ accounts: enriched });
 }
 
 /** POST /api/admin/instagram-accounts */

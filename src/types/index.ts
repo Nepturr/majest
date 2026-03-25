@@ -103,6 +103,13 @@ export interface InstagramAccount {
   // Joined fields (from API)
   model?: { name: string; avatar_url: string | null };
   of_account?: { of_username: string | null; of_avatar_url: string | null };
+  latest_snapshot?: {
+    followers_count: number | null;
+    following_count: number | null;
+    posts_count: number | null;
+    profile_pic_url: string | null;
+    collected_at: string;
+  } | null;
 }
 
 /** A social account from the OneUp API (Instagram filtered) */

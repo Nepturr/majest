@@ -245,6 +245,15 @@ Chaque compte Instagram (`instagram_accounts`) connecte :
 
 ## Historique des Mises à Jour
 
+### v0.4.1 — 25 Mars 2026
+- Accounts page enrichie : pfp réelle depuis Apify (profile_pic_url du dernier snapshot), followers count dans la colonne Account
+- Auto-sync Apify dès qu'un compte est ajouté (startSync déclenché immédiatement après création)
+- Polling temps réel par ligne (6s interval) : état Syncing/Done/Failed par compte, spinner animé dans la colonne "Last Sync"
+- Drawer compte Instagram (clic sur une ligne) : profil complet (pfp large, stats, sparkline followers), grille posts avec métriques hover (likes/comments/views)
+- GET /api/admin/instagram-accounts enrichi avec le dernier snapshot (2 requêtes SQL, O(1))
+- InstagramAccount type : champ latest_snapshot ajouté
+- Collect route : proxy Apify simplifié (laisse l'actor décider), resultsLimit 50
+
 ### v0.4.0 — 25 Mars 2026
 - Intégration Apify Instagram API : clé dans Admin → API (carte Apify + test connexion)
 - DB : 3 nouvelles tables pour les analytics Instagram avec évolution temporelle

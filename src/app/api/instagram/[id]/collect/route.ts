@@ -66,8 +66,7 @@ export async function POST(
       body: JSON.stringify({
         directUrls: [profileUrl],
         resultsType: "details",
-        resultsLimit: 30,
-        proxy: { useApifyProxy: true, apifyProxyGroups: ["RESIDENTIAL"] },
+        resultsLimit: 50,
       }),
     }
   );
