@@ -344,7 +344,7 @@ export function PostMetadataPanel({
         <div className="flex items-start gap-4 px-5 py-4 border-b border-zinc-800 flex-shrink-0">
           {post.thumbnail_url ? (
             <img
-              src={post.thumbnail_url}
+              src={`/api/proxy/image?url=${encodeURIComponent(post.thumbnail_url)}`}
               alt=""
               className="w-16 rounded-lg object-cover flex-shrink-0"
               style={{ aspectRatio: "9/16" }}

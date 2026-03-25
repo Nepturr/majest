@@ -52,6 +52,11 @@ interface Account {
 }
 
 type SortKey = "recent" | "views" | "likes" | "engagement" | "comments";
+
+function proxyImg(url: string | null | undefined): string | null {
+  if (!url) return null;
+  return `/api/proxy/image?url=${encodeURIComponent(url)}`;
+}
 type TypeFilter = "all" | "Reel" | "Video" | "Image" | "Sidecar";
 
 // ─────────────────────────────────────────────────────────────
@@ -108,7 +113,7 @@ function IgAvatar({ url, handle, size = 80 }: { url: string | null; handle: stri
     );
   }
   return (
-    <img src={url} alt={handle} width={size} height={size} style={{ borderRadius: "50%", objectFit: "cover", flexShrink: 0 }} onError={() => setErr(true)} />
+    <img src={proxyImg(url) ?? url} alt={handle} width={size} height={size} style={{ borderRadius: "50%", objectFit: "cover", flexShrink: 0 }} onError={() => setErr(true)} />
   );
 }
 
@@ -150,7 +155,7 @@ function PostCard({
     >
       {/* Thumbnail */}
       {post.thumbnail_url ? (
-        <img src={post.thumbnail_url} alt="" className="w-full h-full object-cover" />
+        <img src={proxyImg(post.thumbnail_url)!} alt="" className="w-full h-full object-cover" />
       ) : (
         <div className="w-full h-full flex items-center justify-center bg-zinc-800">
           <PostTypeIcon type={post.post_type} />
@@ -280,6 +285,8 @@ export default function AccountDetailPage() {
   const [sort, setSort] = useState<SortKey>("recent");
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
   const [syncing, setSyncing] = useState(false);
+  const [scanningReels, setScanningReels] = useState(false);
+  const [reelsScanResult, setReelsScanResult] = useState<{ postsSaved: number } | null>(null);
   // Metadata panel
   const [activeMetaPost, setActiveMetaPost] = useState<Post | null>(null);
   // Map of post.id → PostMetadata (cached from panel opens)
@@ -333,31 +340,48 @@ export default function AccountDetailPage() {
 
   useEffect(() => { loadAccount(); loadPosts(); }, [loadAccount, loadPosts]);
 
-  // Sync via Apify
+  async function runApifyScan(mode: "profile" | "reels") {
+    const startRes = await fetch(`/api/instagram/${id}/collect`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mode }),
+    });
+    if (!startRes.ok) return null;
+    const { runId } = await startRes.json();
+
+    let attempts = 0;
+    while (attempts < 40) {
+      await new Promise((r) => setTimeout(r, 5000));
+      const statusRes = await fetch(`/api/instagram/${id}/collect?runId=${runId}`);
+      if (statusRes.ok) {
+        const s = await statusRes.json();
+        if (s.status === "SUCCEEDED" || s.status === "FAILED") return s;
+      }
+      attempts++;
+    }
+    return null;
+  }
+
   const handleSync = async () => {
     setSyncing(true);
     try {
-      const startRes = await fetch(`/api/instagram/${id}/collect`, { method: "POST" });
-      if (!startRes.ok) { setSyncing(false); return; }
-      const { runId } = await startRes.json();
-
-      // Poll until done
-      let attempts = 0;
-      while (attempts < 40) {
-        await new Promise((r) => setTimeout(r, 5000));
-        const statusRes = await fetch(`/api/instagram/${id}/collect?runId=${runId}`);
-        if (statusRes.ok) {
-          const s = await statusRes.json();
-          if (s.status === "SUCCEEDED" || s.status === "FAILED") {
-            loadAccount();
-            loadPosts();
-            break;
-          }
-        }
-        attempts++;
-      }
+      await runApifyScan("profile");
+      loadAccount();
+      loadPosts();
     } finally {
       setSyncing(false);
+    }
+  };
+
+  const handleScanReels = async () => {
+    setScanningReels(true);
+    setReelsScanResult(null);
+    try {
+      const result = await runApifyScan("reels");
+      if (result) setReelsScanResult({ postsSaved: result.postsSaved ?? 0 });
+      loadPosts();
+    } finally {
+      setScanningReels(false);
     }
   };
 
@@ -415,7 +439,7 @@ export default function AccountDetailPage() {
             <ArrowLeft className="w-4 h-4" />
             Comptes
           </button>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <a
               href={`https://instagram.com/${account?.instagram_handle ?? ""}`}
               target="_blank"
@@ -425,15 +449,30 @@ export default function AccountDetailPage() {
               <ExternalLink className="w-3.5 h-3.5" />
               Instagram
             </a>
+            {/* Scan Réels : scrape l'onglet /reels/ → jusqu'à 200 réels */}
+            <button
+              onClick={handleScanReels}
+              disabled={scanningReels || syncing}
+              className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg bg-purple-700 hover:bg-purple-600 text-white transition-colors disabled:opacity-50"
+            >
+              <Film className={`w-3.5 h-3.5 ${scanningReels ? "animate-spin" : ""}`} />
+              {scanningReels ? "Scan réels…" : "Scan Réels"}
+            </button>
             <button
               onClick={handleSync}
-              disabled={syncing}
+              disabled={syncing || scanningReels}
               className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white transition-colors disabled:opacity-50"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${syncing ? "animate-spin" : ""}`} />
-              {syncing ? "Sync…" : "Sync"}
+              {syncing ? "Sync…" : "Sync profil"}
             </button>
           </div>
+          {/* Résultat du scan réels */}
+          {reelsScanResult && (
+            <div className="text-xs text-purple-400 bg-purple-900/20 border border-purple-700/30 rounded-lg px-3 py-1.5">
+              {reelsScanResult.postsSaved} réel{reelsScanResult.postsSaved !== 1 ? "s" : ""} sauvegardé{reelsScanResult.postsSaved !== 1 ? "s" : ""} ✓
+            </div>
+          )}
         </div>
 
         {loadingAcc ? (

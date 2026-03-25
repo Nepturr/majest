@@ -283,7 +283,7 @@ function MiniPostCard({ post }: { post: PerfPost }) {
       onMouseLeave={() => setHover(false)}
     >
       {post.thumbnail_url ? (
-        <img src={post.thumbnail_url} alt="" className="w-full h-full object-cover" />
+        <img src={`/api/proxy/image?url=${encodeURIComponent(post.thumbnail_url)}`} alt="" className="w-full h-full object-cover" />
       ) : (
         <div className="w-full h-full bg-zinc-800 flex items-center justify-center text-zinc-600 text-xs">
           {post.post_type}

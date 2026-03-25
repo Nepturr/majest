@@ -165,7 +165,7 @@ function PostCard({ post }: { post: InstagramPost }) {
     >
       {post.thumbnail_url ? (
         <img
-          src={post.thumbnail_url}
+          src={`/api/proxy/image?url=${encodeURIComponent(post.thumbnail_url)}`}
           alt={post.caption?.slice(0, 40) ?? "Post"}
           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
           onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}

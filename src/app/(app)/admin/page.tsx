@@ -1229,6 +1229,8 @@ function GetMySocialKeyCard() {
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
+  const [analyticsDebug, setAnalyticsDebug] = useState<Record<string, unknown> | null>(null);
+  const [showDebug, setShowDebug] = useState(false);
   const [showKey, setShowKey] = useState(false);
   const [saved, setSaved] = useState(false);
 
@@ -1263,10 +1265,12 @@ function GetMySocialKeyCard() {
   const handleTest = async () => {
     setTesting(true);
     setTestResult(null);
+    setAnalyticsDebug(null);
     const res = await fetch("/api/admin/gms/test");
     const data = await res.json();
     if (res.ok) {
       setTestResult({ ok: true, message: `Connected — ${data.linkCount} link${data.linkCount !== 1 ? "s" : ""} found.` });
+      if (data.analyticsDebug) setAnalyticsDebug(data.analyticsDebug);
     } else {
       setTestResult({ ok: false, message: data.error ?? "Connection failed." });
     }
@@ -1336,8 +1340,21 @@ function GetMySocialKeyCard() {
             ? <CheckCircle2 className="w-4 h-4 shrink-0" />
             : <AlertCircle className="w-4 h-4 shrink-0" />
           }
-          {testResult.message}
+          <span className="flex-1">{testResult.message}</span>
+          {analyticsDebug && (
+            <button
+              onClick={() => setShowDebug((v) => !v)}
+              className="text-xs underline opacity-70 hover:opacity-100"
+            >
+              {showDebug ? "Masquer" : "Debug analytics"}
+            </button>
+          )}
         </div>
+      )}
+      {analyticsDebug && showDebug && (
+        <pre className="text-[10px] bg-zinc-950 border border-zinc-800 rounded-lg p-3 overflow-auto max-h-60 text-zinc-400 whitespace-pre-wrap">
+          {JSON.stringify(analyticsDebug, null, 2)}
+        </pre>
       )}
 
       {/* Actions */}

@@ -23,13 +23,14 @@ async function getApifyKey(): Promise<string | null> {
   return data?.value ?? null;
 }
 
-// ─────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────
 // POST /api/instagram/[id]/collect
-// Lance un run Apify asynchrone pour scraper le compte IG.
-// Retourne immédiatement { runId, datasetId, status: "RUNNING" }.
-// ─────────────────────────────────────────────
+// Body: { mode?: "profile" | "reels" }
+//   profile (default) : resultsType "details" → profil + 12 derniers posts
+//   reels             : scrape l'onglet /reels/ → jusqu'à 200 réels
+// ─────────────────────────────────────────────────────────────
 export async function POST(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const user = await verifyAuth();
@@ -38,7 +39,6 @@ export async function POST(
   const { id } = await params;
   const adminClient = createAdminClient();
 
-  // Récupérer le handle du compte IG
   const { data: igAccount, error: igError } = await adminClient
     .from("instagram_accounts")
     .select("id, instagram_handle")
@@ -54,27 +54,39 @@ export async function POST(
     return NextResponse.json({ error: "Apify API key not configured." }, { status: 400 });
   }
 
-  const handle = igAccount.instagram_handle.replace(/^@/, "");
-  const profileUrl = `https://www.instagram.com/${handle}/`;
+  const body = await req.json().catch(() => ({}));
+  const mode: "profile" | "reels" = body.mode === "reels" ? "reels" : "profile";
 
-  // Lancer le run Apify (asynchrone)
+  const handle = igAccount.instagram_handle.replace(/^@/, "");
+
+  // Profile mode → détails + ~12 posts
+  // Reels mode   → onglet /reels/ → 200 réels
+  const runPayload =
+    mode === "reels"
+      ? {
+          directUrls: [`https://www.instagram.com/${handle}/reels/`],
+          resultsType: "posts",
+          resultsLimit: 200,
+        }
+      : {
+          directUrls: [`https://www.instagram.com/${handle}/`],
+          resultsType: "details",
+          resultsLimit: 50,
+        };
+
   const runRes = await fetch(
     `${APIFY_BASE}/acts/${APIFY_ACTOR}/runs?token=${apiKey}`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        directUrls: [profileUrl],
-        resultsType: "details",
-        resultsLimit: 50,
-      }),
+      body: JSON.stringify(runPayload),
     }
   );
 
   if (!runRes.ok) {
-    const body = await runRes.json().catch(() => ({}));
+    const errBody = await runRes.json().catch(() => ({}));
     return NextResponse.json(
-      { error: body?.error?.message ?? `Apify error ${runRes.status}` },
+      { error: errBody?.error?.message ?? `Apify error ${runRes.status}` },
       { status: 502 }
     );
   }
@@ -84,17 +96,17 @@ export async function POST(
 
   return NextResponse.json({
     runId: run.id,
+    mode,
     status: run.status,
     datasetId: run.defaultDatasetId ?? null,
   });
 }
 
-// ─────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────
 // GET /api/instagram/[id]/collect?runId=xxx
-// Vérifie le statut d'un run Apify.
-// Si SUCCEEDED → récupère les données et les stocke en DB.
-// Retourne { status, snapshotSaved, postsSaved }.
-// ─────────────────────────────────────────────
+// Vérifie le statut. Si SUCCEEDED → persiste les données.
+// Détecte automatiquement le mode via la structure des items.
+// ─────────────────────────────────────────────────────────────
 export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -113,7 +125,6 @@ export async function GET(
     return NextResponse.json({ error: "Apify API key not configured." }, { status: 400 });
   }
 
-  // Vérifier le statut du run
   const statusRes = await fetch(
     `${APIFY_BASE}/acts/${APIFY_ACTOR}/runs/${runId}?token=${apiKey}`
   );
@@ -128,7 +139,6 @@ export async function GET(
     return NextResponse.json({ runId, status, snapshotSaved: false, postsSaved: 0 });
   }
 
-  // Récupérer les items du dataset
   const datasetId: string = run.defaultDatasetId;
   const itemsRes = await fetch(
     `${APIFY_BASE}/datasets/${datasetId}/items?token=${apiKey}&clean=true&format=json`
@@ -136,47 +146,78 @@ export async function GET(
   if (!itemsRes.ok) {
     return NextResponse.json({ error: "Failed to fetch Apify dataset." }, { status: 502 });
   }
-  const items: ApifyInstagramProfile[] = await itemsRes.json();
+  const items: ApifyItem[] = await itemsRes.json();
 
   if (!items || items.length === 0) {
     return NextResponse.json({ runId, status, snapshotSaved: false, postsSaved: 0 });
   }
 
-  const profile = items[0];
   const adminClient = createAdminClient();
   let snapshotSaved = false;
   let postsSaved = 0;
 
-  // ── 1. Insérer le snapshot du compte ────────────────────────
-  const { error: snapErr } = await adminClient
-    .from("instagram_account_snapshots")
-    .insert({
-      instagram_account_id: id,
-      followers_count: profile.followersCount ?? null,
-      following_count: profile.followsCount ?? null,
-      posts_count: profile.postsCount ?? null,
-      bio: profile.biography ?? null,
-      is_verified: profile.verified ?? false,
-      profile_pic_url: profile.profilePicUrlHD ?? profile.profilePicUrl ?? null,
-      apify_run_id: runId,
-    });
+  // Detect mode: profile scan has `followersCount` at root
+  const isProfileScan = "followersCount" in items[0] || "latestPosts" in items[0];
 
-  if (!snapErr) snapshotSaved = true;
+  if (isProfileScan) {
+    // ── Profile scan ──────────────────────────────────────────
+    const profile = items[0] as ApifyInstagramProfile;
 
-  // ── 2. Insérer les posts + leurs snapshots ──────────────────
-  const posts: ApifyPost[] = profile.latestPosts ?? [];
+    const { error: snapErr } = await adminClient
+      .from("instagram_account_snapshots")
+      .insert({
+        instagram_account_id: id,
+        followers_count: profile.followersCount ?? null,
+        following_count: profile.followsCount ?? null,
+        posts_count: profile.postsCount ?? null,
+        bio: profile.biography ?? null,
+        is_verified: profile.verified ?? false,
+        profile_pic_url: profile.profilePicUrlHD ?? profile.profilePicUrl ?? null,
+        apify_run_id: runId,
+      });
 
+    if (!snapErr) snapshotSaved = true;
+
+    const posts: ApifyPost[] = profile.latestPosts ?? [];
+    postsSaved = await upsertPosts(adminClient, id, runId, posts);
+  } else {
+    // ── Reels / posts scan ────────────────────────────────────
+    // items IS the posts array directly
+    const posts = items as ApifyPost[];
+    postsSaved = await upsertPosts(adminClient, id, runId, posts);
+    snapshotSaved = false; // no profile snapshot in reels mode
+  }
+
+  return NextResponse.json({
+    runId,
+    status,
+    snapshotSaved,
+    postsSaved,
+    finishedAt: run.finishedAt ?? null,
+  });
+}
+
+// ─────────────────────────────────────────────────────────────
+// Helper: upsert posts + snapshots, returns count saved
+// ─────────────────────────────────────────────────────────────
+async function upsertPosts(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  adminClient: any,
+  accountId: string,
+  runId: string,
+  posts: ApifyPost[]
+): Promise<number> {
+  let count = 0;
   for (const post of posts) {
     if (!post.shortCode) continue;
 
     const postType = mapPostType(post);
 
-    // Upsert du post (structure invariante + mise à jour last_seen_at)
     const { data: upsertedPost } = await adminClient
       .from("instagram_posts")
       .upsert(
         {
-          instagram_account_id: id,
+          instagram_account_id: accountId,
           shortcode: post.shortCode,
           post_type: postType,
           url: post.url ?? `https://www.instagram.com/p/${post.shortCode}/`,
@@ -193,7 +234,6 @@ export async function GET(
 
     if (!upsertedPost?.id) continue;
 
-    // Snapshot des métriques à cet instant
     const { error: postSnapErr } = await adminClient
       .from("instagram_post_snapshots")
       .insert({
@@ -205,23 +245,18 @@ export async function GET(
         apify_run_id: runId,
       });
 
-    if (!postSnapErr) postsSaved++;
+    if (!postSnapErr) count++;
   }
-
-  return NextResponse.json({
-    runId,
-    status,
-    snapshotSaved,
-    postsSaved,
-    finishedAt: run.finishedAt ?? null,
-  });
+  return count;
 }
 
-// ── Types Apify ──────────────────────────────────────────────
+// ── Types ────────────────────────────────────────────────────
+type ApifyItem = ApifyInstagramProfile | ApifyPost;
+
 interface ApifyPost {
   shortCode?: string;
   type?: string;
-  productType?: string; // "clips" = Reel, "igtv" = IGTV, "feed" = standard
+  productType?: string;
   url?: string;
   caption?: string;
   displayUrl?: string;
@@ -234,7 +269,6 @@ interface ApifyPost {
 
 interface ApifyInstagramProfile {
   username?: string;
-  fullName?: string;
   biography?: string;
   followersCount?: number;
   followsCount?: number;
@@ -246,11 +280,10 @@ interface ApifyInstagramProfile {
 }
 
 function mapPostType(post: ApifyPost): "Image" | "Video" | "Reel" | "Sidecar" {
-  // productType is the most reliable signal from Apify
   if (post.productType === "clips") return "Reel";
   if (post.productType === "igtv") return "Video";
   const t = (post.type ?? "").toLowerCase();
-  if (t === "video" || t === "reel") return "Video";
+  if (t === "video") return "Video";
   if (t === "sidecar" || t === "graphsidecar") return "Sidecar";
   return "Image";
 }
