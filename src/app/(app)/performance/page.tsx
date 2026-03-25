@@ -228,7 +228,7 @@ function RateBadge({ rate, thresholds }: { rate: number | null; thresholds: [num
 }
 
 // ─────────────────────────────────────────────────────────────
-// Post types for inline reels grid
+// MiniPostCard — kept for potential future use (not in main table)
 // ─────────────────────────────────────────────────────────────
 interface PerfPost {
   id: string;
@@ -247,15 +247,6 @@ interface PerfPost {
     plays_count: number | null;
     collected_at: string;
   } | null;
-}
-
-function postEngagementRate(post: PerfPost): number | null {
-  const snap = post.latest_snapshot;
-  if (!snap) return null;
-  const interactions = (snap.likes_count ?? 0) + (snap.comments_count ?? 0);
-  const views = snap.views_count ?? snap.plays_count;
-  if (!views) return null;
-  return (interactions / views) * 100;
 }
 
 function MiniPostCard({ post }: { post: PerfPost }) {
@@ -334,14 +325,9 @@ function MiniPostCard({ post }: { post: PerfPost }) {
 }
 
 // ─────────────────────────────────────────────────────────────
-// Account Row (expandable with reels)
+// Account Row — stats en ligne, bouton Détails
 // ─────────────────────────────────────────────────────────────
 function AccountRow({ account }: { account: FunnelAccount }) {
-  const [open, setOpen] = useState(false);
-  const [posts, setPosts] = useState<PerfPost[] | null>(null);
-  const [loadingPosts, setLoadingPosts] = useState(false);
-  const [sortPosts, setSortPosts] = useState<"views" | "likes" | "er" | "recent">("views");
-
   const ig = account.instagram;
   const gms = account.gms;
   const track = account.tracking;
@@ -349,197 +335,83 @@ function AccountRow({ account }: { account: FunnelAccount }) {
   const followers = ig.followers_current;
   const funnelBase = ig.views_delta ?? followers;
   const bioCtr = gms && funnelBase ? (gms.clicks / funnelBase) * 100 : null;
-  const trackCtr = gms && gms.clicks > 0 ? ((track?.clicks_delta ?? 0) / gms.clicks) * 100 : null;
-  const subRate = track && (track.clicks_delta ?? 0) > 0 ? ((track.subscribers_delta ?? 0) / track.clicks_delta!) * 100 : null;
-
-  const handleOpen = async () => {
-    const newOpen = !open;
-    setOpen(newOpen);
-    if (newOpen && posts === null) {
-      setLoadingPosts(true);
-      try {
-        const res = await fetch(`/api/instagram/${account.id}/posts?limit=100`);
-        if (res.ok) {
-          const data = await res.json();
-          setPosts(data.posts ?? []);
-        }
-      } finally {
-        setLoadingPosts(false);
-      }
-    }
-  };
-
-  const sortedPosts = posts ? [...posts].sort((a, b) => {
-    const av = a.latest_snapshot?.views_count ?? a.latest_snapshot?.plays_count ?? 0;
-    const bv = b.latest_snapshot?.views_count ?? b.latest_snapshot?.plays_count ?? 0;
-    const al = a.latest_snapshot?.likes_count ?? 0;
-    const bl = b.latest_snapshot?.likes_count ?? 0;
-    if (sortPosts === "views") return bv - av;
-    if (sortPosts === "likes") return bl - al;
-    if (sortPosts === "er") return (postEngagementRate(b) ?? 0) - (postEngagementRate(a) ?? 0);
-    return (b.posted_at ?? "").localeCompare(a.posted_at ?? "");
-  }) : null;
+  const trackCtr = gms && gms.clicks > 0 ? ((track?.clicks_total ?? 0) / gms.clicks) * 100 : null;
+  const subRate = track && track.clicks_total > 0 ? (track.subscribers_total / track.clicks_total) * 100 : null;
 
   return (
-    <>
-      <tr
-        className="border-b border-zinc-800 hover:bg-zinc-900/60 cursor-pointer transition-colors"
-        onClick={handleOpen}
-      >
-        {/* Account */}
-        <td className="px-4 py-3">
-          <div className="flex items-center gap-3">
-            <IgAvatar url={ig.profile_pic_url} handle={account.instagram_handle} size={32} />
-            <div>
-              <Link
-                href={`/accounts/${account.id}`}
-                onClick={(e) => e.stopPropagation()}
-                className="text-sm font-medium text-white leading-none hover:text-blue-400 transition-colors"
-              >
-                @{account.instagram_handle}
-              </Link>
-              {account.model && (
-                <p className="text-xs text-zinc-500 mt-0.5">{account.model.name}</p>
-              )}
-            </div>
-          </div>
-        </td>
+    <tr className="border-b border-zinc-800 hover:bg-zinc-900/40 transition-colors">
 
-        {/* Views / Followers */}
-        <td className="px-4 py-3 text-right">
-          {ig.views_delta != null ? (
-            <>
-              <p className="text-sm font-semibold text-white">{fmt(ig.views_delta)} <span className="text-xs font-normal text-zinc-500">vues</span></p>
-              <p className="text-xs text-zinc-500 mt-0.5">{fmt(followers)} followers</p>
-            </>
-          ) : (
-            <>
-              <p className="text-sm font-semibold text-white">{fmt(followers)}</p>
-              <p className="text-xs text-zinc-600 mt-0.5">pas de vues</p>
-            </>
-          )}
-        </td>
-
-        {/* Bio clicks */}
-        <td className="px-4 py-3 text-right">
-          <p className="text-sm font-semibold text-white">{fmt(gms?.clicks)}</p>
-          <div className="mt-0.5 flex flex-col items-end gap-0.5">
-            <RateBadge rate={bioCtr} thresholds={[3, 1]} />
-            {gms && !gms.is_delta && (
-              <span className="text-[9px] text-amber-600/70">cumul</span>
+      {/* Account */}
+      <td className="px-4 py-3">
+        <div className="flex items-center gap-3">
+          <IgAvatar url={ig.profile_pic_url} handle={account.instagram_handle} size={32} />
+          <div>
+            <p className="text-sm font-medium text-white leading-none">@{account.instagram_handle}</p>
+            {account.model && (
+              <p className="text-xs text-zinc-500 mt-0.5">{account.model.name}</p>
             )}
           </div>
-        </td>
+        </div>
+      </td>
 
-        {/* Track clicks */}
-        <td className="px-4 py-3 text-right">
-          <p className="text-sm font-semibold text-white">{fmt(track?.clicks_delta)}</p>
-          <div className="mt-0.5 flex flex-col items-end gap-0.5">
-            {track?.needs_more_data ? (
-              <span className="text-[9px] text-zinc-600" title="Lance une 2ème collecte pour voir le delta de la période">2e collecte req.</span>
-            ) : (
-              <>
-                <RateBadge rate={trackCtr} thresholds={[30, 10]} />
-                {track?.is_total && (
-                  <span className="text-[9px] text-amber-600/70">since ever</span>
-                )}
-              </>
-            )}
-          </div>
-        </td>
+      {/* Views période */}
+      <td className="px-4 py-3 text-right">
+        {ig.views_delta != null ? (
+          <>
+            <p className="text-sm font-semibold text-white">{fmt(ig.views_delta)}</p>
+            <p className="text-[10px] text-zinc-600 mt-0.5">{fmt(followers)} followers</p>
+          </>
+        ) : (
+          <>
+            <p className="text-sm font-semibold text-white">{fmt(followers)}</p>
+            <p className="text-[10px] text-zinc-600 mt-0.5">followers</p>
+          </>
+        )}
+      </td>
 
-        {/* Subscribers */}
-        <td className="px-4 py-3 text-right">
-          <p className="text-sm font-semibold text-white">{fmt(track?.subscribers_delta)}</p>
-          <div className="mt-0.5 flex flex-col items-end gap-0.5">
-            {track?.needs_more_data ? (
-              <span className="text-[9px] text-zinc-600" title="Lance une 2ème collecte pour voir le delta de la période">2e collecte req.</span>
-            ) : (
-              <>
-                <RateBadge rate={subRate} thresholds={[5, 2]} />
-                {track?.is_total && (
-                  <span className="text-[9px] text-amber-600/70">since ever</span>
-                )}
-              </>
-            )}
-          </div>
-        </td>
+      {/* Views totales (all-time) */}
+      <td className="px-4 py-3 text-right">
+        <p className="text-sm font-semibold text-white">{fmt(ig.views_current)}</p>
+        <p className="text-[10px] text-zinc-600 mt-0.5">all-time</p>
+      </td>
 
-        {/* Chevron */}
-        <td className="px-3 py-3 text-zinc-600">
-          <span className="transition-transform inline-block" style={{ transform: open ? "rotate(90deg)" : "rotate(0deg)" }}>›</span>
-        </td>
-      </tr>
+      {/* Bio clicks */}
+      <td className="px-4 py-3 text-right">
+        <p className="text-sm font-semibold text-white">{fmt(gms?.clicks)}</p>
+        <RateBadge rate={bioCtr} thresholds={[3, 1]} />
+      </td>
 
-      {open && (
-        <tr className="bg-zinc-900/30 border-b border-zinc-800">
-          <td colSpan={6} className="px-6 py-5">
-            {/* Aggregate stats */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3 text-sm mb-5">
-              {[
-                { label: "Avg Views", value: fmt(ig.avg_views ?? ig.avg_plays) },
-                { label: "Avg Likes", value: fmt(ig.avg_likes) },
-                { label: "Avg Comments", value: fmt(ig.avg_comments) },
-                { label: "Tier 1", value: gms?.tier1_pct != null ? `${gms.tier1_pct}%` : "—" },
-                { label: "Posts DB", value: String(ig.total_posts_in_db) },
-                { label: "Track total", value: fmt(track?.clicks_total) },
-                { label: "Subs total", value: fmt(track?.subscribers_total) },
-              ].map(({ label, value }) => (
-                <div key={label} className="bg-zinc-800/60 rounded-lg px-3 py-2">
-                  <p className="text-[10px] text-zinc-500 uppercase tracking-wide">{label}</p>
-                  <p className="text-white font-semibold mt-0.5">{value}</p>
-                </div>
-              ))}
-            </div>
+      {/* Track clicks total (OF) */}
+      <td className="px-4 py-3 text-right">
+        <p className="text-sm font-semibold text-white">{fmt(track?.clicks_total)}</p>
+        <RateBadge rate={trackCtr} thresholds={[30, 10]} />
+      </td>
 
-            {/* Reels / Posts grid */}
-            <div>
-              <div className="flex items-center justify-between mb-3">
-                <p className="text-xs text-zinc-400 font-medium">
-                  Posts & Réels
-                  {posts !== null && <span className="text-zinc-600 ml-1">({posts.length})</span>}
-                </p>
-                <div className="flex items-center gap-1">
-                  {(["views", "likes", "er", "recent"] as const).map((s) => (
-                    <button
-                      key={s}
-                      onClick={(e) => { e.stopPropagation(); setSortPosts(s); }}
-                      className={`px-2 py-0.5 text-[10px] rounded border transition-all ${
-                        sortPosts === s
-                          ? "bg-zinc-700 border-zinc-600 text-white"
-                          : "border-zinc-700 text-zinc-500 hover:text-white"
-                      }`}
-                    >
-                      {s === "views" ? "Vues" : s === "likes" ? "Likes" : s === "er" ? "ER" : "Récent"}
-                    </button>
-                  ))}
-                </div>
-              </div>
+      {/* Subs total (OF) */}
+      <td className="px-4 py-3 text-right">
+        <p className="text-sm font-semibold text-white">{fmt(track?.subscribers_total)}</p>
+        <RateBadge rate={subRate} thresholds={[5, 2]} />
+      </td>
 
-              {loadingPosts ? (
-                <div className="flex items-center gap-2 text-zinc-600 text-xs py-6 justify-center">
-                  <svg className="animate-spin w-3.5 h-3.5" viewBox="0 0 24 24" fill="none">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
-                  </svg>
-                  Chargement…
-                </div>
-              ) : sortedPosts !== null && sortedPosts.length > 0 ? (
-                <div className="grid grid-cols-6 sm:grid-cols-8 md:grid-cols-10 lg:grid-cols-12 gap-1.5">
-                  {sortedPosts.map((post) => (
-                    <MiniPostCard key={post.id} post={post} />
-                  ))}
-                </div>
-              ) : sortedPosts !== null ? (
-                <p className="text-zinc-600 text-xs text-center py-6">
-                  Aucun post. Lance un sync sur la page Comptes.
-                </p>
-              ) : null}
-            </div>
-          </td>
-        </tr>
-      )}
-    </>
+      {/* LTV */}
+      <td className="px-4 py-3 text-right">
+        <p className="text-sm font-semibold text-zinc-500">—</p>
+        <p className="text-[10px] text-zinc-700 mt-0.5">revenus à venir</p>
+      </td>
+
+      {/* Détails */}
+      <td className="px-3 py-3">
+        <Link
+          href={`/accounts/${account.id}`}
+          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-xs text-zinc-300 hover:text-white transition-colors font-medium"
+        >
+          Détails
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-3 h-3">
+            <path d="M5 12h14M12 5l7 7-7 7"/>
+          </svg>
+        </Link>
+      </td>
+    </tr>
   );
 }
 
@@ -900,10 +772,12 @@ export default function PerformancePage() {
                     <thead>
                       <tr className="border-b border-zinc-800 text-xs text-zinc-500 uppercase tracking-wide">
                         <th className="px-4 py-2.5 text-left font-medium">Compte</th>
-                        <th className="px-4 py-2.5 text-right font-medium">Views / Followers</th>
+                        <th className="px-4 py-2.5 text-right font-medium">Views période</th>
+                        <th className="px-4 py-2.5 text-right font-medium">Views totales</th>
                         <th className="px-4 py-2.5 text-right font-medium">Bio Clicks</th>
-                        <th className="px-4 py-2.5 text-right font-medium">Track Clicks</th>
-                        <th className="px-4 py-2.5 text-right font-medium">Subscribers</th>
+                        <th className="px-4 py-2.5 text-right font-medium">Track (total OF)</th>
+                        <th className="px-4 py-2.5 text-right font-medium">Subs (total OF)</th>
+                        <th className="px-4 py-2.5 text-right font-medium">LTV</th>
                         <th className="px-3 py-2.5" />
                       </tr>
                     </thead>

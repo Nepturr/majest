@@ -224,6 +224,7 @@ async function upsertPosts(
           caption: post.caption ?? null,
           thumbnail_url: post.displayUrl ?? null,
           posted_at: post.timestamp ?? null,
+          video_duration: post.videoDuration ?? null,
           last_seen_at: new Date().toISOString(),
           is_active: true,
         },
@@ -265,6 +266,7 @@ interface ApifyPost {
   commentsCount?: number;
   videoViewCount?: number;
   videoPlayCount?: number;
+  videoDuration?: number; // durée en secondes (réels/vidéos)
 }
 
 interface ApifyInstagramProfile {

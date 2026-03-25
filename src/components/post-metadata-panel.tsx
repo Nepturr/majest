@@ -39,6 +39,7 @@ export interface PostForPanel {
   caption: string | null;
   thumbnail_url: string | null;
   posted_at: string | null;
+  video_duration?: number | null; // durée Apify en secondes — pré-remplit duration_seconds
   latest_snapshot: {
     likes_count: number | null;
     comments_count: number | null;
@@ -243,19 +244,30 @@ export function PostMetadataPanel({
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isDirtyRef = useRef(false);
 
-  // Load existing metadata
+  // Load existing metadata — prérempli la durée depuis Apify si pas encore renseignée
   useEffect(() => {
     setLoading(true);
     fetch(`/api/instagram/posts/${post.id}/metadata`)
       .then((r) => r.json())
       .then((d) => {
-        if (d.metadata) setMeta(d.metadata);
-        else setMeta(emptyMeta(post.id));
+        if (d.metadata) {
+          const loaded: PostMetadata = d.metadata;
+          // Préremplir duration_seconds depuis Apify si le champ est vide
+          if (loaded.duration_seconds == null && post.video_duration != null) {
+            loaded.duration_seconds = post.video_duration;
+          }
+          setMeta(loaded);
+        } else {
+          const empty = emptyMeta(post.id);
+          // Préremplir duration depuis Apify pour les nouvelles entrées
+          if (post.video_duration != null) empty.duration_seconds = post.video_duration;
+          setMeta(empty);
+        }
       })
       .catch(() => setMeta(emptyMeta(post.id)))
       .finally(() => setLoading(false));
     isDirtyRef.current = false;
-  }, [post.id]);
+  }, [post.id, post.video_duration]);
 
   // Debounced auto-save (2s after last change)
   const scheduleSave = useCallback((updatedMeta: PostMetadata) => {
