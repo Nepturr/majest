@@ -51,14 +51,14 @@ export async function GET(req: NextRequest) {
   }
 
   const json = await res.json();
+
+  // OFAPI response: { data: { list: [...], hasMore: bool }, _pagination: {...} }
   const rawLinks: {
-    id?: string;
-    _id?: string;
-    name?: string;
-    title?: string;
-    url?: string;
-    link?: string;
-  }[] = json.data ?? json.tracking_links ?? json ?? [];
+    id?: number | string;
+    campaignName?: string;
+    campaignUrl?: string;
+    campaignCode?: number;
+  }[] = json.data?.list ?? json.data ?? json.tracking_links ?? json ?? [];
 
   // Get already-assigned tracking link IDs from our DB
   const { data: assigned } = await adminClient
@@ -69,11 +69,13 @@ export async function GET(req: NextRequest) {
   const assignedIds = new Set((assigned ?? []).map((r) => r.of_tracking_link_id));
 
   const links = rawLinks.map((link) => {
-    const id = link.id ?? link._id ?? "";
+    const id = String(link.id ?? "");
+    const name = link.campaignName ?? id;
+    const url = link.campaignUrl ?? null;
     return {
       id,
-      name: link.name ?? link.title ?? id,
-      url: link.url ?? link.link ?? null,
+      name,
+      url,
       isAssigned: assignedIds.has(id),
     };
   });

@@ -45,13 +45,14 @@ export async function GET() {
     result.oneup_error = "No OneUp API key configured";
   }
 
-  // GMS: fetch first link raw
+  // GMS: fetch full raw response
   if (gmsKeySetting.data?.value) {
-    const res = await fetch("https://getmysocial.com/api/v2/links", {
+    const res = await fetch("https://getmysocial.com/api/v2/links?limit=3", {
       headers: { "x-api-key": gmsKeySetting.data.value },
     });
     const json = await res.json();
-    const raw = json.data ?? json.links ?? json;
+    result.gms_full_response_sample = json; // full response to inspect structure
+    const raw = json.data ?? json.links ?? (Array.isArray(json) ? json : null);
     result.gms_first_link_raw = Array.isArray(raw) ? raw[0] : raw;
     result.gms_first_link_all_keys = Array.isArray(raw) && raw[0] ? Object.keys(raw[0]) : [];
     result.gms_response_top_keys = Object.keys(json);
