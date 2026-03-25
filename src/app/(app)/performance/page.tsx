@@ -230,6 +230,15 @@ function RateBadge({ rate, thresholds }: { rate: number | null; thresholds: [num
 // ─────────────────────────────────────────────────────────────
 // MiniPostCard — kept for potential future use (not in main table)
 // ─────────────────────────────────────────────────────────────
+function postEngagementRate(post: PerfPost): number | null {
+  const snap = post.latest_snapshot;
+  if (!snap) return null;
+  const interactions = (snap.likes_count ?? 0) + (snap.comments_count ?? 0);
+  const views = snap.views_count ?? snap.plays_count;
+  if (!views) return null;
+  return (interactions / views) * 100;
+}
+
 interface PerfPost {
   id: string;
   shortcode: string;
