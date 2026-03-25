@@ -5,15 +5,17 @@ import { useParams, useRouter } from "next/navigation";
 import {
   ArrowLeft, Heart, MessageCircle, Eye, RefreshCw,
   ExternalLink, TrendingUp, Film, Image as ImageIcon,
-  Layers, Play, Users, PenLine, Share2,
+  Layers, Play, Users, PenLine, Share2, DollarSign,
+  MousePointerClick, UserCheck, Link2,
 } from "lucide-react";
 import { PostMetadataPanel, hasMetadata } from "@/components/post-metadata-panel";
 import type { PostForPanel, PostMetadata } from "@/components/post-metadata-panel";
-import type { FunnelAccount } from "@/app/api/performance/funnel/route";
+import type { AccountAnalytics } from "@/app/api/instagram/[id]/analytics/route";
 
 // ─────────────────────────────────────────────────────────────
 // Types
 // ─────────────────────────────────────────────────────────────
+type Period = "today" | "week" | "month" | "inception";
 type SortKey = "views" | "likes" | "engagement" | "recent" | "comments" | "shares";
 type TypeFilter = "all" | "Reel" | "Video" | "Image" | "Sidecar";
 
@@ -58,14 +60,28 @@ interface Account {
   model?: { name: string; avatar_url: string | null } | null;
 }
 
+const PERIODS: { key: Period; label: string }[] = [
+  { key: "today",     label: "Today" },
+  { key: "week",      label: "7 Days" },
+  { key: "month",     label: "30 Days" },
+  { key: "inception", label: "All Time" },
+];
+
 // ─────────────────────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────────────────────
-function fmt(n: number | null | undefined): string {
+function fmt(n: number | null | undefined, compact = true): string {
   if (n == null) return "—";
-  if (Math.abs(n) >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (Math.abs(n) >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
+  if (compact) {
+    if (Math.abs(n) >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+    if (Math.abs(n) >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
+  }
   return n.toLocaleString();
+}
+
+function fmtMoney(n: number | null | undefined): string {
+  if (n == null) return "—";
+  return `$${n.toFixed(0)}`;
 }
 
 function engagementRate(post: Post): number | null {
@@ -90,27 +106,6 @@ function relativeTime(iso: string | null): string {
   return `${m}m`;
 }
 
-// ── Funnel bar ────────────────────────────────────────────────
-function FunnelBar({ label, value, pct, color = "bg-blue-600" }: {
-  label: string; value: number | null; pct: number | null; color?: string;
-}) {
-  if (value == null || value === 0) return null;
-  return (
-    <div className="flex items-center gap-3 min-w-0">
-      <div className="w-20 text-right shrink-0">
-        <p className="text-xs font-semibold text-white">{fmt(value)}</p>
-      </div>
-      <div className="flex-1 h-2 bg-zinc-800 rounded-full overflow-hidden">
-        <div className={`h-full rounded-full transition-all ${color}`} style={{ width: `${Math.min(pct ?? 0, 100)}%` }} />
-      </div>
-      <div className="w-24 shrink-0">
-        <p className="text-[10px] text-zinc-500">{label}</p>
-        {pct != null && <p className="text-[9px] text-zinc-700">{pct.toFixed(1)}%</p>}
-      </div>
-    </div>
-  );
-}
-
 function proxyImg(url: string | null | undefined): string | null {
   if (!url) return null;
   return `/api/proxy/image?url=${encodeURIComponent(url)}`;
@@ -121,6 +116,211 @@ function PostTypeIcon({ type, cls = "w-3 h-3" }: { type: Post["post_type"]; cls?
   if (type === "Video") return <Play className={cls} />;
   if (type === "Sidecar") return <Layers className={cls} />;
   return <ImageIcon className={cls} />;
+}
+
+// ─────────────────────────────────────────────────────────────
+// SVG Chart components
+// ─────────────────────────────────────────────────────────────
+
+/** Minimal area/line chart */
+function SparkArea({
+  data,
+  color = "#3b82f6",
+  height = 48,
+}: {
+  data: number[];
+  color?: string;
+  height?: number;
+}) {
+  if (data.length < 2) {
+    return (
+      <div className="flex items-center justify-center text-zinc-700 text-[10px]" style={{ height }}>
+        Not enough data
+      </div>
+    );
+  }
+  const w = 300;
+  const h = height;
+  const min = Math.min(...data);
+  const max = Math.max(...data);
+  const range = max - min || 1;
+  const pad = 4;
+
+  const pts = data.map((v, i) => [
+    (i / (data.length - 1)) * w,
+    h - pad - ((v - min) / range) * (h - pad * 2),
+  ]);
+
+  const pathD = pts.map((p, i) => `${i === 0 ? "M" : "L"} ${p[0].toFixed(1)} ${p[1].toFixed(1)}`).join(" ");
+  const areaD = `${pathD} L ${w} ${(h - pad).toFixed(1)} L 0 ${(h - pad).toFixed(1)} Z`;
+  const gradId = `g-${color.replace(/[^a-z0-9]/gi, "")}`;
+
+  return (
+    <svg viewBox={`0 0 ${w} ${h}`} className="w-full" style={{ height }} preserveAspectRatio="none">
+      <defs>
+        <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={color} stopOpacity="0.25" />
+          <stop offset="100%" stopColor={color} stopOpacity="0.02" />
+        </linearGradient>
+      </defs>
+      <path d={areaD} fill={`url(#${gradId})`} />
+      <path d={pathD} fill="none" stroke={color} strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" />
+      {/* Last point dot */}
+      <circle
+        cx={pts.at(-1)![0].toFixed(1)}
+        cy={pts.at(-1)![1].toFixed(1)}
+        r="2.5"
+        fill={color}
+      />
+    </svg>
+  );
+}
+
+/** Mini bar chart */
+function MiniBarChart({
+  data,
+  color = "#6366f1",
+  height = 36,
+}: {
+  data: number[];
+  color?: string;
+  height?: number;
+}) {
+  if (data.length === 0) {
+    return (
+      <div className="flex items-center justify-center text-zinc-700 text-[10px]" style={{ height }}>
+        No data
+      </div>
+    );
+  }
+  const max = Math.max(...data, 1);
+  const w = 300;
+  const h = height;
+  const gap = 1.5;
+  const barW = Math.max((w - gap * (data.length - 1)) / data.length, 1.5);
+
+  return (
+    <svg viewBox={`0 0 ${w} ${h}`} className="w-full" style={{ height }} preserveAspectRatio="none">
+      {data.map((v, i) => {
+        const bh = Math.max((v / max) * h, 1.5);
+        return (
+          <rect
+            key={i}
+            x={i * (barW + gap)}
+            y={h - bh}
+            width={barW}
+            height={bh}
+            fill={color}
+            opacity={0.85}
+            rx="1"
+          />
+        );
+      })}
+    </svg>
+  );
+}
+
+/** SVG donut chart */
+const DONUT_COLORS = ["#3b82f6", "#8b5cf6", "#06b6d4", "#10b981", "#f59e0b", "#6b7280"];
+
+function DonutChart({ data }: { data: Array<{ country: string; pct: number; count: number }> }) {
+  const total = data.reduce((s, d) => s + d.count, 0);
+  if (!data.length || total === 0) {
+    return (
+      <div className="flex items-center justify-center text-zinc-700 text-[10px] h-full">
+        No country data
+      </div>
+    );
+  }
+
+  const R = 36;
+  const cx = 50;
+  const cy = 50;
+  const sw = 16;
+  const gap = 0.02; // small gap between segments (radians)
+
+  let angle = -Math.PI / 2;
+  const segments = data.map((d, i) => {
+    const sweep = (d.count / total) * (2 * Math.PI) - gap;
+    const startAngle = angle + gap / 2;
+    angle += (d.count / total) * (2 * Math.PI);
+    const endAngle = startAngle + sweep;
+
+    const x1 = cx + R * Math.cos(startAngle);
+    const y1 = cy + R * Math.sin(startAngle);
+    const x2 = cx + R * Math.cos(endAngle);
+    const y2 = cy + R * Math.sin(endAngle);
+    const large = sweep > Math.PI ? 1 : 0;
+
+    return {
+      d: `M ${x1.toFixed(2)} ${y1.toFixed(2)} A ${R} ${R} 0 ${large} 1 ${x2.toFixed(2)} ${y2.toFixed(2)}`,
+      color: DONUT_COLORS[i % DONUT_COLORS.length],
+      country: d.country,
+      pct: d.pct,
+    };
+  });
+
+  return (
+    <div className="flex items-center gap-4">
+      <svg viewBox="0 0 100 100" className="w-20 h-20 shrink-0">
+        {segments.map((seg, i) => (
+          <path key={i} d={seg.d} fill="none" stroke={seg.color} strokeWidth={sw} />
+        ))}
+      </svg>
+      <div className="flex flex-col gap-1 min-w-0">
+        {segments.map((seg, i) => (
+          <div key={i} className="flex items-center gap-1.5 text-[11px]">
+            <span className="w-2 h-2 rounded-full shrink-0" style={{ background: seg.color }} />
+            <span className="text-zinc-400 truncate">{seg.country}</span>
+            <span className="text-zinc-600 ml-auto pl-1">{seg.pct}%</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
+// Stat card
+// ─────────────────────────────────────────────────────────────
+function StatCard({
+  label,
+  value,
+  sub,
+  icon,
+  accent = "blue",
+  chart,
+}: {
+  label: string;
+  value: string;
+  sub?: string | null;
+  icon: React.ReactNode;
+  accent?: "blue" | "violet" | "cyan" | "emerald" | "amber" | "indigo";
+  chart?: React.ReactNode;
+}) {
+  const accents = {
+    blue:    { bg: "bg-blue-600/8",    border: "border-blue-500/15",   text: "text-blue-400",    val: "text-blue-200" },
+    violet:  { bg: "bg-violet-600/8",  border: "border-violet-500/15", text: "text-violet-400",  val: "text-violet-200" },
+    cyan:    { bg: "bg-cyan-600/8",    border: "border-cyan-500/15",   text: "text-cyan-400",    val: "text-cyan-200" },
+    emerald: { bg: "bg-emerald-600/8", border: "border-emerald-500/15",text: "text-emerald-400", val: "text-emerald-200" },
+    amber:   { bg: "bg-amber-600/8",   border: "border-amber-500/15",  text: "text-amber-400",   val: "text-amber-200" },
+    indigo:  { bg: "bg-indigo-600/8",  border: "border-indigo-500/15", text: "text-indigo-400",  val: "text-indigo-200" },
+  };
+  const a = accents[accent];
+
+  return (
+    <div className={`rounded-2xl border ${a.bg} ${a.border} p-4 flex flex-col gap-2 min-w-0`}>
+      <div className="flex items-center justify-between gap-2">
+        <div className={`flex items-center gap-1.5 text-[10px] uppercase tracking-wide font-medium ${a.text}`}>
+          {icon}
+          {label}
+        </div>
+        {sub && <span className="text-[10px] text-zinc-600 shrink-0">{sub}</span>}
+      </div>
+      <p className={`text-2xl font-bold leading-none ${a.val}`}>{value}</p>
+      {chart && <div className="mt-1">{chart}</div>}
+    </div>
+  );
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -178,25 +378,20 @@ function ReelCard({ post, metaMap, onOpenMeta }: {
           </div>
         )}
 
-        {/* Type badge top-left */}
         <div className="absolute top-2 left-2 flex items-center gap-1 bg-black/70 backdrop-blur-sm rounded-full px-2 py-0.5 text-white text-[10px] font-semibold">
           <PostTypeIcon type={post.post_type} />
           {post.post_type}
         </div>
 
-        {/* Top-right indicators */}
         <div className="absolute top-2 right-2 flex items-center gap-1.5">
-          {hasMeta && (
-            <div className="w-2 h-2 rounded-full bg-emerald-400 shadow shadow-emerald-900" title="Metadata remplie" />
-          )}
+          {hasMeta && <div className="w-2 h-2 rounded-full bg-emerald-400 shadow shadow-emerald-900" />}
           {inactive && (
             <span className="bg-orange-700/90 rounded-full px-1.5 py-0.5 text-[9px] text-white font-medium">
-              {!post.is_active ? "supprimé" : "stale"}
+              {!post.is_active ? "deleted" : "stale"}
             </span>
           )}
         </div>
 
-        {/* Views always visible */}
         {views != null && (
           <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent px-3 pt-8 pb-2.5">
             <span className="flex items-center gap-1 text-white text-sm font-bold">
@@ -206,37 +401,31 @@ function ReelCard({ post, metaMap, onOpenMeta }: {
           </div>
         )}
 
-        {/* Hover overlay */}
         <div className="absolute inset-0 bg-black/0 group-hover:bg-black/60 transition-all duration-200 flex items-center justify-center">
           <div className="opacity-0 group-hover:opacity-100 transition-all flex flex-col items-center gap-2 text-white">
             <div className="w-11 h-11 rounded-full bg-white/15 backdrop-blur-sm flex items-center justify-center">
               <PenLine className="w-5 h-5" />
             </div>
-            <span className="text-xs font-semibold">Analyser</span>
+            <span className="text-xs font-semibold">Analyse</span>
           </div>
         </div>
 
-        {/* IG link on hover */}
         <a
           href={post.url}
           target="_blank"
           rel="noopener noreferrer"
           onClick={(e) => e.stopPropagation()}
           className="absolute bottom-2.5 right-2.5 opacity-0 group-hover:opacity-100 transition-opacity text-white/60 hover:text-white"
-          title="Voir sur Instagram"
         >
           <ExternalLink className="w-4 h-4" />
         </a>
       </div>
 
-      {/* Info section */}
+      {/* Info */}
       <div className="p-3.5 flex flex-col gap-2.5 flex-1 min-h-0">
-        {/* Caption */}
         <p className={`text-xs leading-relaxed line-clamp-3 ${post.caption ? "text-zinc-400" : "text-zinc-700 italic"}`}>
           {post.caption ?? "No caption"}
         </p>
-
-        {/* Metrics + date */}
         <div className="flex items-center gap-2.5 text-[11px] text-zinc-600 mt-auto pt-1 border-t border-zinc-800 flex-wrap">
           {snap?.likes_count != null && (
             <span className="flex items-center gap-0.5 text-zinc-500">
@@ -266,7 +455,7 @@ function ReelCard({ post, metaMap, onOpenMeta }: {
 }
 
 // ─────────────────────────────────────────────────────────────
-// Options
+// Sort / Type options
 // ─────────────────────────────────────────────────────────────
 const SORT_OPTIONS: { key: SortKey; label: string }[] = [
   { key: "views",      label: "Views" },
@@ -295,9 +484,11 @@ export default function AccountDetailPage() {
 
   const [account, setAccount] = useState<Account | null>(null);
   const [posts, setPosts] = useState<Post[]>([]);
-  const [funnel, setFunnel] = useState<FunnelAccount | null>(null);
+  const [analytics, setAnalytics] = useState<AccountAnalytics | null>(null);
+  const [period, setPeriod] = useState<Period>("month");
   const [loadingAcc, setLoadingAcc] = useState(true);
   const [loadingPosts, setLoadingPosts] = useState(true);
+  const [loadingAnalytics, setLoadingAnalytics] = useState(true);
   const [sort, setSort] = useState<SortKey>("views");
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
   const [syncing, setSyncing] = useState(false);
@@ -330,18 +521,17 @@ export default function AccountDetailPage() {
     } finally { setLoadingPosts(false); }
   }, [id]);
 
-  const loadFunnel = useCallback(async () => {
-    const res = await fetch(`/api/performance/funnel?period=inception&accountId=${id}`);
-    if (res.ok) {
-      const data = await res.json();
-      const acc = (data.accounts ?? [])[0] as FunnelAccount | undefined;
-      if (acc) setFunnel(acc);
-    }
+  const loadAnalytics = useCallback(async (p: Period) => {
+    setLoadingAnalytics(true);
+    try {
+      const res = await fetch(`/api/instagram/${id}/analytics?period=${p}`);
+      if (res.ok) setAnalytics(await res.json());
+    } finally { setLoadingAnalytics(false); }
   }, [id]);
 
   useEffect(() => { loadAccount(); }, [loadAccount]);
   useEffect(() => { loadPosts(); }, [loadPosts]);
-  useEffect(() => { loadFunnel(); }, [loadFunnel]);
+  useEffect(() => { loadAnalytics(period); }, [loadAnalytics, period]);
 
   const handleCloseMeta = useCallback(() => {
     const post = activeMetaPost;
@@ -369,7 +559,7 @@ export default function AccountDetailPage() {
     const startData = await res.json().catch(() => ({}));
     if (!res.ok) return { status: "FAILED", error: startData.error ?? `Error ${res.status}` };
     const { runId } = startData;
-    if (!runId) return { status: "FAILED", error: "No runId in Apify response" };
+    if (!runId) return { status: "FAILED", error: "No runId from Apify" };
 
     let attempts = 0;
     while (attempts < 60) {
@@ -389,7 +579,7 @@ export default function AccountDetailPage() {
     try {
       const r = await runApifyScan("profile");
       if (r?.error) showScanMsg(`Error: ${r.error}`);
-      else { showScanMsg("Profile synced ✓"); loadAccount(); loadPosts(); }
+      else { showScanMsg("Profile synced ✓"); loadAccount(); loadPosts(); loadAnalytics(period); }
     } finally { setSyncing(false); }
   };
 
@@ -402,7 +592,7 @@ export default function AccountDetailPage() {
       else if (r?.status === "SUCCEEDED") {
         const saved = r.postsSaved ?? 0;
         if (saved === 0) showScanMsg("0 reels — private account or Apify quota reached");
-        else { showScanMsg(`${saved} reels saved ✓`); loadPosts(); loadFunnel(); }
+        else { showScanMsg(`${saved} reels saved ✓`); loadPosts(); loadAnalytics(period); }
       } else {
         showScanMsg("Scan failed — check Apify key in Admin");
       }
@@ -415,18 +605,16 @@ export default function AccountDetailPage() {
     const av = a.views_delta ?? a.latest_snapshot?.views_count ?? a.latest_snapshot?.plays_count ?? 0;
     const bv = b.views_delta ?? b.latest_snapshot?.views_count ?? b.latest_snapshot?.plays_count ?? 0;
     switch (sort) {
-      case "views": return bv - av;
-      case "likes":    return (b.latest_snapshot?.likes_count ?? 0) - (a.latest_snapshot?.likes_count ?? 0);
-      case "shares":   return (b.latest_snapshot?.shares_count ?? 0) - (a.latest_snapshot?.shares_count ?? 0);
-      case "comments": return (b.latest_snapshot?.comments_count ?? 0) - (a.latest_snapshot?.comments_count ?? 0);
+      case "views":      return bv - av;
+      case "likes":      return (b.latest_snapshot?.likes_count ?? 0) - (a.latest_snapshot?.likes_count ?? 0);
+      case "shares":     return (b.latest_snapshot?.shares_count ?? 0) - (a.latest_snapshot?.shares_count ?? 0);
+      case "comments":   return (b.latest_snapshot?.comments_count ?? 0) - (a.latest_snapshot?.comments_count ?? 0);
       case "engagement": return (engagementRate(b) ?? 0) - (engagementRate(a) ?? 0);
-      default: return (b.posted_at ?? "").localeCompare(a.posted_at ?? "");
+      default:           return (b.posted_at ?? "").localeCompare(a.posted_at ?? "");
     }
   });
 
-  // ── Agrégats ──────────────────────────────────────────────
   const snap = account?.latest_snapshot;
-  // On utilise les vues all-time brutes (latest_snapshot), pas le delta période
   const withViews = posts.filter((p) => (p.latest_snapshot?.views_count ?? p.latest_snapshot?.plays_count) != null);
   const totalViews = withViews.reduce((s, p) => s + (p.latest_snapshot?.views_count ?? p.latest_snapshot?.plays_count ?? 0), 0);
   const avgViews = withViews.length > 0 ? Math.round(totalViews / withViews.length) : null;
@@ -438,12 +626,20 @@ export default function AccountDetailPage() {
   const avgEr = postsWithEr.length > 0
     ? postsWithEr.reduce((s, p) => s + (engagementRate(p) ?? 0), 0) / postsWithEr.length
     : null;
-
   const typeCounts = (["Reel", "Video", "Image", "Sidecar"] as const).map((t) => ({
     key: t, count: posts.filter((p) => p.post_type === t).length,
   }));
 
   const isBusy = syncing || scanningReels;
+  const st = analytics?.stats;
+
+  // Chart data (values only)
+  const followersChartData = analytics?.followers_history.map((d) => d.value) ?? [];
+  const viewsChartData = analytics?.views_history.map((d) => d.value) ?? [];
+  const bioChartData = analytics?.bio_clicks_history.map((d) => d.value) ?? [];
+
+  // Period label for sub-text
+  const periodLabel = PERIODS.find((p) => p.key === period)?.label ?? "";
 
   return (
     <div className="min-h-screen bg-zinc-950 text-white flex flex-col">
@@ -451,7 +647,6 @@ export default function AccountDetailPage() {
       {/* ── Sticky top bar ──────────────────────────────────── */}
       <div className="sticky top-0 z-30 bg-zinc-950/90 backdrop-blur-md border-b border-zinc-800/60 px-6 py-3">
         <div className="flex items-center gap-4 flex-wrap">
-          {/* Back */}
           <button
             onClick={() => router.back()}
             className="flex items-center gap-1.5 text-zinc-500 hover:text-white transition-colors text-sm shrink-0"
@@ -460,7 +655,6 @@ export default function AccountDetailPage() {
             <span className="hidden sm:inline">Back</span>
           </button>
 
-          {/* Identity */}
           {loadingAcc ? (
             <div className="w-40 h-5 bg-zinc-800 rounded animate-pulse" />
           ) : account && (
@@ -477,7 +671,6 @@ export default function AccountDetailPage() {
             </div>
           )}
 
-          {/* Scan result */}
           {scanResult && (
             <span className={`text-xs rounded-lg px-2.5 py-1 ${
               scanResult.includes("Error") || scanResult.includes("failed") || scanResult.includes("0 reels")
@@ -488,7 +681,6 @@ export default function AccountDetailPage() {
             </span>
           )}
 
-          {/* Action buttons */}
           <div className="flex items-center gap-2 ml-auto shrink-0">
             <a
               href={`https://instagram.com/${account?.instagram_handle ?? ""}`}
@@ -519,72 +711,195 @@ export default function AccountDetailPage() {
       </div>
 
       {/* ── Content ─────────────────────────────────────────── */}
-      <div className="flex-1 px-6 py-6 max-w-screen-2xl mx-auto w-full">
+      <div className="flex-1 px-6 py-6 max-w-screen-2xl mx-auto w-full space-y-6">
 
-        {/* ── Stats + Funnel ─────────────────────────────────── */}
-        <div className="flex flex-col lg:flex-row gap-4 mb-7">
-          {/* Stat pills */}
-          <div className="flex items-center gap-3 flex-wrap">
-            <div className="flex items-center gap-1.5 bg-blue-600/10 border border-blue-500/20 rounded-xl px-4 py-2">
-              <Eye className="w-3.5 h-3.5 text-blue-400" />
-              <span className="text-lg font-bold text-blue-300">{fmt(totalViews)}</span>
-              <span className="text-[10px] text-blue-600 uppercase tracking-wide">views</span>
-            </div>
-            <div className="flex items-center gap-1.5 bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-2">
-              <Eye className="w-3 h-3 text-zinc-500" />
-              <span className="text-sm font-bold text-white">{fmt(avgViews)}</span>
-              <span className="text-[10px] text-zinc-600">avg views</span>
-            </div>
-            <div className="flex items-center gap-1.5 bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-2">
-              <Heart className="w-3 h-3 text-zinc-500" />
-              <span className="text-sm font-bold text-white">{fmt(avgLikes)}</span>
-              <span className="text-[10px] text-zinc-600">avg likes</span>
-            </div>
-            <div className="flex items-center gap-1.5 bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-2">
-              <TrendingUp className="w-3 h-3 text-emerald-600" />
-              <span className="text-sm font-bold text-white">{avgEr != null ? `${avgEr.toFixed(1)}%` : "—"}</span>
-              <span className="text-[10px] text-zinc-600">avg ER</span>
-            </div>
-            <div className="text-xs text-zinc-700">{posts.length} posts in DB</div>
+        {/* ── Period selector ────────────────────────────────── */}
+        <div className="flex items-center gap-1 bg-zinc-900 border border-zinc-800 rounded-xl p-1 w-fit">
+          {PERIODS.map((p) => (
+            <button
+              key={p.key}
+              onClick={() => setPeriod(p.key)}
+              className={`px-3.5 py-1.5 text-xs font-medium rounded-lg transition-all ${
+                period === p.key
+                  ? "bg-zinc-700 text-white"
+                  : "text-zinc-500 hover:text-zinc-300"
+              }`}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+
+        {/* ── Stats cards ────────────────────────────────────── */}
+        {loadingAnalytics ? (
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            {Array.from({ length: 8 }).map((_, i) => (
+              <div key={i} className="rounded-2xl border border-zinc-800 bg-zinc-900/40 p-4 h-24 animate-pulse" />
+            ))}
           </div>
+        ) : (
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <StatCard
+              label="Views"
+              value={fmt(st?.views_delta ?? st?.views_total)}
+              sub={period !== "inception" && st?.views_delta != null ? `of ${fmt(st.views_total)} total` : null}
+              icon={<Eye className="w-3 h-3" />}
+              accent="blue"
+              chart={viewsChartData.length >= 2 ? <SparkArea data={viewsChartData} color="#3b82f6" height={40} /> : undefined}
+            />
+            <StatCard
+              label="Followers"
+              value={fmt(st?.followers_current)}
+              sub={st?.followers_delta != null ? `${st.followers_delta > 0 ? "+" : ""}${fmt(st.followers_delta)} ${periodLabel}` : null}
+              icon={<Users className="w-3 h-3" />}
+              accent="violet"
+              chart={followersChartData.length >= 2 ? <SparkArea data={followersChartData} color="#8b5cf6" height={40} /> : undefined}
+            />
+            <StatCard
+              label="Bio Clicks"
+              value={fmt(st?.bio_clicks)}
+              sub={periodLabel}
+              icon={<Link2 className="w-3 h-3" />}
+              accent="cyan"
+              chart={bioChartData.length >= 2 ? <MiniBarChart data={bioChartData} color="#06b6d4" height={32} /> : undefined}
+            />
+            <StatCard
+              label="Track Clicks"
+              value={fmt(st?.track_clicks_total)}
+              sub="all-time"
+              icon={<MousePointerClick className="w-3 h-3" />}
+              accent="indigo"
+            />
+            <StatCard
+              label="Subscribers"
+              value={fmt(st?.subscribers_total)}
+              sub="all-time OF"
+              icon={<UserCheck className="w-3 h-3" />}
+              accent="emerald"
+            />
+            <StatCard
+              label="Revenue"
+              value={fmtMoney(st?.revenue_total)}
+              sub="all-time OF"
+              icon={<DollarSign className="w-3 h-3" />}
+              accent="amber"
+            />
+            <StatCard
+              label="LTV"
+              value={st?.ltv != null ? `$${st.ltv.toFixed(2)}` : "—"}
+              sub="revenue / sub"
+              icon={<TrendingUp className="w-3 h-3" />}
+              accent="amber"
+            />
+            <StatCard
+              label="Avg Views"
+              value={fmt(avgViews)}
+              sub={`${posts.length} posts in DB`}
+              icon={<Eye className="w-3 h-3" />}
+              accent="blue"
+            />
+          </div>
+        )}
 
-          {/* Funnel widget */}
-          {funnel && (
-            <div className="bg-zinc-900 border border-zinc-800 rounded-xl px-5 py-4 min-w-[280px] flex-1 max-w-sm">
-              <p className="text-[10px] text-zinc-600 uppercase tracking-wide font-medium mb-3">Funnel (all-time)</p>
-              {(() => {
-                const views = funnel.instagram.views_current ?? 0;
-                const bioClicks = funnel.gms?.clicks ?? 0;
-                const trackClicks = funnel.tracking?.clicks_total ?? 0;
-                const subs = funnel.tracking?.subscribers_total ?? 0;
-                const rev = funnel.tracking?.revenue_total;
-                const top = views || 1;
-                return (
-                  <div className="space-y-1.5">
-                    <FunnelBar label="Views" value={views} pct={100} color="bg-blue-600" />
-                    <FunnelBar label="Bio Clicks" value={bioClicks}
-                      pct={views > 0 ? (bioClicks / views) * 100 : null} color="bg-indigo-500" />
-                    <FunnelBar label="Track Clicks" value={trackClicks}
-                      pct={top > 0 ? (trackClicks / top) * 100 : null} color="bg-violet-500" />
-                    <FunnelBar label="Subscribers" value={subs}
-                      pct={top > 0 ? (subs / top) * 100 : null} color="bg-emerald-500" />
-                    {rev != null && rev > 0 && (
-                      <div className="pt-1.5 mt-1 border-t border-zinc-800 flex items-center justify-between text-xs">
-                        <span className="text-zinc-500">Revenue</span>
-                        <span className="font-semibold text-emerald-400">${rev.toFixed(0)}</span>
-                        {subs > 0 && <span className="text-zinc-600 text-[10px]">LTV ${(rev / subs).toFixed(2)}</span>}
-                      </div>
-                    )}
-                  </div>
-                );
-              })()}
+        {/* ── Charts row: trends + countries ─────────────────── */}
+        {!loadingAnalytics && (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            {/* Followers trend */}
+            <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4">
+              <p className="text-[10px] text-zinc-500 uppercase tracking-wide font-medium mb-3 flex items-center gap-1.5">
+                <Users className="w-3 h-3" /> Followers over time
+              </p>
+              <SparkArea data={followersChartData} color="#8b5cf6" height={72} />
+              {followersChartData.length >= 2 && (
+                <div className="flex justify-between text-[10px] text-zinc-700 mt-1.5">
+                  <span>{fmt(followersChartData[0])}</span>
+                  <span>{fmt(followersChartData.at(-1))}</span>
+                </div>
+              )}
             </div>
-          )}
+
+            {/* Views trend */}
+            <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4">
+              <p className="text-[10px] text-zinc-500 uppercase tracking-wide font-medium mb-3 flex items-center gap-1.5">
+                <Eye className="w-3 h-3" /> Total views over time
+              </p>
+              <SparkArea data={viewsChartData} color="#3b82f6" height={72} />
+              {viewsChartData.length >= 2 && (
+                <div className="flex justify-between text-[10px] text-zinc-700 mt-1.5">
+                  <span>{fmt(viewsChartData[0])}</span>
+                  <span>{fmt(viewsChartData.at(-1))}</span>
+                </div>
+              )}
+            </div>
+
+            {/* Country donut */}
+            <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4">
+              <p className="text-[10px] text-zinc-500 uppercase tracking-wide font-medium mb-3 flex items-center gap-1.5">
+                <Users className="w-3 h-3" /> Audience countries
+              </p>
+              <DonutChart data={analytics?.country_breakdown ?? []} />
+              {(analytics?.country_breakdown?.length ?? 0) === 0 && (
+                <p className="text-[10px] text-zinc-700 text-center mt-2">
+                  Collect GMS data to see countries
+                </p>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ── Funnel bar ─────────────────────────────────────── */}
+        {!loadingAnalytics && st && (st.track_clicks_total ?? 0) > 0 && (
+          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4">
+            <p className="text-[10px] text-zinc-500 uppercase tracking-wide font-medium mb-4 flex items-center gap-1.5">
+              <TrendingUp className="w-3 h-3" /> Funnel (all-time)
+            </p>
+            {(() => {
+              const views  = st.views_total ?? 0;
+              const bio    = st.bio_clicks ?? 0;
+              const track  = st.track_clicks_total ?? 0;
+              const subs   = st.subscribers_total ?? 0;
+              const rev    = st.revenue_total;
+              const top    = Math.max(views, 1);
+              const bar = (label: string, val: number, color: string) => (
+                <div key={label} className="flex items-center gap-3">
+                  <span className="text-[11px] text-zinc-500 w-24 text-right shrink-0">{label}</span>
+                  <div className="flex-1 h-2 bg-zinc-800 rounded-full overflow-hidden">
+                    <div className={`h-full rounded-full ${color}`} style={{ width: `${Math.min((val / top) * 100, 100)}%` }} />
+                  </div>
+                  <span className="text-xs font-semibold text-white w-16 shrink-0">{fmt(val)}</span>
+                  <span className="text-[10px] text-zinc-600 w-10 shrink-0">
+                    {top > 0 ? `${((val / top) * 100).toFixed(1)}%` : "—"}
+                  </span>
+                </div>
+              );
+              return (
+                <div className="space-y-2.5">
+                  {bar("Views", views, "bg-blue-600")}
+                  {bio > 0 && bar("Bio Clicks", bio, "bg-indigo-500")}
+                  {track > 0 && bar("Track Clicks", track, "bg-violet-500")}
+                  {subs > 0 && bar("Subscribers", subs, "bg-emerald-500")}
+                  {rev != null && rev > 0 && (
+                    <div className="pt-2 mt-1 border-t border-zinc-800 flex items-center gap-6 text-xs">
+                      <span className="text-zinc-500">Revenue</span>
+                      <span className="font-semibold text-emerald-400">{fmtMoney(rev)}</span>
+                      {subs > 0 && <span className="text-zinc-600">LTV {fmtMoney(st.ltv)}/sub</span>}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+          </div>
+        )}
+
+        {/* ── Content divider ────────────────────────────────── */}
+        <div className="flex items-center gap-3 pt-2">
+          <div className="h-px flex-1 bg-zinc-800" />
+          <span className="text-[10px] text-zinc-600 uppercase tracking-widest font-medium">Content</span>
+          <div className="h-px flex-1 bg-zinc-800" />
         </div>
 
         {/* ── Filters & Sort ─────────────────────────────────── */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
-          {/* Type filter */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex items-center gap-1 bg-zinc-900 border border-zinc-800 rounded-xl p-1 flex-wrap">
             {TYPE_OPTIONS.map((opt) => {
               const cnt = opt.key === "all" ? posts.length : typeCounts.find((t) => t.key === opt.key)?.count ?? 0;
@@ -607,10 +922,8 @@ export default function AccountDetailPage() {
               );
             })}
           </div>
-
-          {/* Sort */}
           <div className="flex items-center gap-1.5 flex-wrap">
-            <span className="text-[10px] text-zinc-600 uppercase tracking-wide">Sort by</span>
+            <span className="text-[10px] text-zinc-600 uppercase tracking-wide">Sort</span>
             {SORT_OPTIONS.map((opt) => (
               <button
                 key={opt.key}
@@ -636,7 +949,6 @@ export default function AccountDetailPage() {
                 <div className="p-3.5 space-y-2">
                   <div className="h-2 bg-zinc-800 rounded" />
                   <div className="h-2 bg-zinc-800/60 rounded w-3/4" />
-                  <div className="h-2 bg-zinc-800/40 rounded w-1/2" />
                 </div>
               </div>
             ))}
@@ -645,7 +957,7 @@ export default function AccountDetailPage() {
           <div className="flex flex-col items-center justify-center py-32 text-zinc-700">
             <Users className="w-12 h-12 mb-4 opacity-20" />
             <p className="text-base font-medium text-zinc-500">No posts found</p>
-            <p className="text-sm mt-1">Click the <Film className="inline w-3.5 h-3.5 mx-0.5" /> button to scan reels from Instagram</p>
+            <p className="text-sm mt-1">Click the <Film className="inline w-3.5 h-3.5 mx-0.5" /> button to scan reels</p>
             <button
               onClick={handleScanReels}
               disabled={isBusy}
@@ -658,12 +970,7 @@ export default function AccountDetailPage() {
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
             {sorted.map((post) => (
-              <ReelCard
-                key={post.id}
-                post={post}
-                metaMap={metaMap}
-                onOpenMeta={setActiveMetaPost}
-              />
+              <ReelCard key={post.id} post={post} metaMap={metaMap} onOpenMeta={setActiveMetaPost} />
             ))}
           </div>
         )}
@@ -671,10 +978,7 @@ export default function AccountDetailPage() {
 
       {/* ── Metadata panel ──────────────────────────────────── */}
       {activeMetaPost && (
-        <PostMetadataPanel
-          post={activeMetaPost as PostForPanel}
-          onClose={handleCloseMeta}
-        />
+        <PostMetadataPanel post={activeMetaPost as PostForPanel} onClose={handleCloseMeta} />
       )}
     </div>
   );

@@ -1,6 +1,9 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { NextRequest, NextResponse } from "next/server";
+import { upsertPosts, updateTotalViews } from "@/lib/instagram/apify-collect";
+
+export const maxDuration = 300; // 5 min pour le cron Vercel
 
 // GMS uses 3-letter country codes ("USA", "GBR", etc.)
 const TIER1_3 = new Set(["USA", "GBR", "CAN", "AUS", "DEU", "FRA"]);
@@ -122,8 +125,9 @@ export async function POST(req: NextRequest) {
               }
             }
 
+            // Read countries once — used for both tier1_pct and country_breakdown donut
+            let countryBreakdown: Array<{ country: string; count: number }> | null = null;
             if (countriesRes.status === "fulfilled" && countriesRes.value.ok) {
-              // GMS returns 3-letter codes (USA, GBR, CAN…) with count field
               const list: Array<{ country: string; code?: string | null; count?: number; visitors?: number; clicks?: number }> =
                 (await countriesRes.value.json())?.data ?? [];
               if (Array.isArray(list) && list.length > 0) {
@@ -133,6 +137,7 @@ export async function POST(req: NextRequest) {
                   .reduce((s, c) => s + (c.count ?? c.visitors ?? c.clicks ?? 0), 0);
                 tier1_pct = total > 0 ? Math.round((t1 / total) * 100) : null;
                 accountDetails.push(`Tier1: ${t1}/${total} = ${tier1_pct}%`);
+                countryBreakdown = list.map((c) => ({ country: c.country, count: c.count ?? c.visitors ?? c.clicks ?? 0 }));
               }
             }
 
@@ -141,6 +146,7 @@ export async function POST(req: NextRequest) {
               total_clicks,
               unique_visitors,
               tier1_pct,
+              country_breakdown: countryBreakdown,
             });
 
             if (!snapErr) {
@@ -216,41 +222,44 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // ── 3. Apify Instagram sync (fire all → poll max 150s) ───────
+  // ── 3. Apify Instagram sync (profile + reels, fire all → poll max 270s) ─────
   if (sources.has("instagram") && settings.apify_api_key) {
     const apifyKey = settings.apify_api_key;
-    const APIFY_ACTOR = "apify~instagram-scraper";
     const APIFY_BASE = "https://api.apify.com/v2";
-    const now = new Date().toISOString();
 
-    const apifyRuns = await Promise.allSettled(
-      accounts.map(async (account) => {
+    type RunMeta = { accountId: string; mode: "profile" | "reels" };
+    const pending = new Map<string, RunMeta>(); // runId → meta
+    const accountIds = new Set<string>();
+
+    // Fire profile scans + reel scans for every active account in parallel
+    await Promise.allSettled(
+      accounts.flatMap((account) => {
         const handle = account.instagram_handle.replace(/^@/, "");
-        const runRes = await fetch(
-          `${APIFY_BASE}/acts/${APIFY_ACTOR}/runs?token=${apifyKey}`,
-          {
+        accountIds.add(account.id);
+
+        const fireRun = async (mode: "profile" | "reels") => {
+          const actorId = mode === "reels" ? "apify~instagram-reel-scraper" : "apify~instagram-scraper";
+          const payload =
+            mode === "reels"
+              ? { username: [handle], resultsLimit: 50 }
+              : { directUrls: [`https://www.instagram.com/${handle}/`], resultsType: "details", resultsLimit: 50 };
+
+          const runRes = await fetch(`${APIFY_BASE}/acts/${actorId}/runs?token=${apifyKey}`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              directUrls: [`https://www.instagram.com/${handle}/`],
-              resultsType: "details",
-              resultsLimit: 50,
-            }),
-          }
-        );
-        if (!runRes.ok) throw new Error(`HTTP ${runRes.status}`);
-        const data = await runRes.json();
-        return { accountId: account.id, runId: (data?.data ?? data)?.id as string };
+            body: JSON.stringify(payload),
+          });
+          if (!runRes.ok) throw new Error(`HTTP ${runRes.status}`);
+          const data = await runRes.json();
+          const runId = (data?.data ?? data)?.id as string;
+          pending.set(runId, { accountId: account.id, mode });
+        };
+
+        return [fireRun("profile"), fireRun("reels")];
       })
     );
 
-    const pending = new Map<string, string>(); // runId → accountId
-    for (const r of apifyRuns) {
-      if (r.status === "fulfilled") pending.set(r.value.runId, r.value.accountId);
-      else errors.push(`Apify start: ${r.reason}`);
-    }
-
-    const deadline = Date.now() + 150_000;
+    const deadline = Date.now() + 270_000; // 4.5 min
     const remaining = new Set(pending.keys());
 
     while (remaining.size > 0 && Date.now() < deadline) {
@@ -258,14 +267,14 @@ export async function POST(req: NextRequest) {
 
       await Promise.allSettled([...remaining].map(async (runId) => {
         try {
-          const statusRes = await fetch(`${APIFY_BASE}/acts/${APIFY_ACTOR}/runs/${runId}?token=${apifyKey}`);
+          const statusRes = await fetch(`${APIFY_BASE}/actor-runs/${runId}?token=${apifyKey}`);
           if (!statusRes.ok) return;
           const run = (await statusRes.json())?.data ?? {};
           if (run.status !== "SUCCEEDED" && run.status !== "FAILED") return;
           remaining.delete(runId);
           if (run.status !== "SUCCEEDED") return;
 
-          const accountId = pending.get(runId)!;
+          const meta = pending.get(runId)!;
           const itemsRes = await fetch(
             `${APIFY_BASE}/datasets/${run.defaultDatasetId}/items?token=${apifyKey}&format=json&limit=500`
           );
@@ -273,76 +282,36 @@ export async function POST(req: NextRequest) {
           const items = await itemsRes.json();
           if (!items?.length) return;
 
-          const profile = items[0];
-
-          // Account snapshot
-          await adminClient.from("instagram_account_snapshots").insert({
-            instagram_account_id: accountId,
-            followers_count: profile.followersCount ?? null,
-            following_count: profile.followsCount ?? null,
-            posts_count: profile.postsCount ?? null,
-            bio: profile.biography ?? null,
-            is_verified: profile.verified ?? false,
-            profile_pic_url: profile.profilePicUrlHD ?? profile.profilePicUrl ?? null,
-            apify_run_id: runId,
-          });
-
-          // Collect the shortcodes seen this run (for last_seen_at update)
-          const seenShortcodes: string[] = [];
-
-          for (const post of profile.latestPosts ?? []) {
-            if (!post.shortCode) continue;
-            seenShortcodes.push(post.shortCode);
-
-            let postType = "Image";
-            if (post.productType === "clips") postType = "Reel";
-            else if (post.productType === "igtv") postType = "Video";
-            else if ((post.type ?? "").toLowerCase() === "video") postType = "Video";
-            else if ((post.type ?? "").toLowerCase() === "sidecar") postType = "Sidecar";
-
-            const { data: upsertedPost } = await adminClient
-              .from("instagram_posts")
-              .upsert({
-                instagram_account_id: accountId,
-                shortcode: post.shortCode,
-                post_type: postType,
-                url: post.url ?? `https://www.instagram.com/p/${post.shortCode}/`,
-                caption: post.caption ?? null,
-                thumbnail_url: post.displayUrl ?? null,
-                posted_at: post.timestamp ?? null,
-                video_duration: post.videoDuration != null ? Math.round(post.videoDuration) : null,
-                last_seen_at: now,
-              }, { onConflict: "shortcode", ignoreDuplicates: false })
-              .select("id")
-              .single();
-
-            if (upsertedPost?.id) {
-              await adminClient.from("instagram_post_snapshots").insert({
-                post_id: upsertedPost.id,
-                likes_count: post.likesCount ?? null,
-                comments_count: post.commentsCount ?? null,
-                shares_count: post.sharesCount ?? null,
-                views_count: post.videoViewCount ?? null,
-                plays_count: post.videoPlayCount ?? null,
-                apify_run_id: runId,
-              });
-              // Toujours écraser duration_seconds avec la valeur Apify (sûre)
-              if (post.videoDuration != null) {
-                await adminClient
-                  .from("instagram_post_metadata")
-                  .upsert(
-                    { post_id: upsertedPost.id, duration_seconds: Math.round(post.videoDuration) },
-                    { onConflict: "post_id", ignoreDuplicates: false }
-                  );
-              }
-              apifyPostsSaved++;
-            }
+          if (meta.mode === "profile") {
+            const profile = items[0];
+            await adminClient.from("instagram_account_snapshots").insert({
+              instagram_account_id: meta.accountId,
+              followers_count: profile.followersCount ?? null,
+              following_count: profile.followsCount ?? null,
+              posts_count: profile.postsCount ?? null,
+              bio: profile.biography ?? null,
+              is_verified: profile.verified ?? false,
+              profile_pic_url: profile.profilePicUrlHD ?? profile.profilePicUrl ?? null,
+              apify_run_id: runId,
+            });
+            const posts = profile.latestPosts ?? [];
+            const result = await upsertPosts(adminClient, meta.accountId, runId, posts);
+            apifyPostsSaved += result.postsSaved;
+          } else {
+            // Reels scan
+            const result = await upsertPosts(adminClient, meta.accountId, runId, items);
+            apifyPostsSaved += result.postsSaved;
           }
         } catch (e) {
           errors.push(`Apify finalize ${runId}: ${e}`);
         }
       }));
     }
+
+    // Update total_views for every account after all scans
+    await Promise.allSettled(
+      [...accountIds].map((accountId) => updateTotalViews(adminClient, accountId))
+    );
   }
 
   return NextResponse.json({

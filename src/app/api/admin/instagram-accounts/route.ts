@@ -1,6 +1,11 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
+import { after } from "next/server";
 import { NextRequest, NextResponse } from "next/server";
+import { runFullScan } from "@/lib/instagram/apify-collect";
+
+// Allow background after() tasks up to 5 min
+export const maxDuration = 300;
 
 async function verifyAdmin() {
   const supabase = await createClient();
@@ -132,5 +137,21 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  return NextResponse.json({ account: data }, { status: 201 });
+  // Auto-scan: trigger profile + reels collection in background after response is sent
+  const newAccountId = data.id;
+  const newHandle = (data.instagram_handle as string).replace(/^@/, "");
+  after(async () => {
+    const bg = createAdminClient();
+    const { data: keyRow } = await bg
+      .from("settings")
+      .select("value")
+      .eq("key", "apify_api_key")
+      .single();
+    const apifyKey: string | undefined = keyRow?.value;
+    if (apifyKey) {
+      await runFullScan(bg, newAccountId, newHandle, apifyKey);
+    }
+  });
+
+  return NextResponse.json({ account: data, scanning: true }, { status: 201 });
 }
