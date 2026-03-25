@@ -229,7 +229,7 @@ function PostCard({
           </div>
         </div>
       )}
-    </a>
+    </div>
   );
 }
 
