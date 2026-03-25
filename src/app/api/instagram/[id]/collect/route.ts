@@ -126,9 +126,9 @@ export async function GET(
     return NextResponse.json({ error: "Apify API key not configured." }, { status: 400 });
   }
 
-  // Utilise l'endpoint générique /runs/{runId} — fonctionne quel que soit l'actor
+  // /actor-runs/{runId} = endpoint générique indépendant de l'actor
   const statusRes = await fetch(
-    `${APIFY_BASE}/runs/${runId}?token=${apiKey}`
+    `${APIFY_BASE}/actor-runs/${runId}?token=${apiKey}`
   );
   if (!statusRes.ok) {
     return NextResponse.json({ error: "Failed to fetch run status from Apify." }, { status: 502 });

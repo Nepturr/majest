@@ -13,7 +13,6 @@ import type { PostForPanel, PostMetadata } from "@/components/post-metadata-pane
 // ─────────────────────────────────────────────────────────────
 // Types
 // ─────────────────────────────────────────────────────────────
-type Period = "today" | "week" | "month" | "inception";
 type SortKey = "views" | "likes" | "engagement" | "recent" | "comments";
 type TypeFilter = "all" | "Reel" | "Video" | "Image" | "Sidecar";
 
@@ -241,13 +240,6 @@ function ReelCard({ post, metaMap, onOpenMeta }: {
 // ─────────────────────────────────────────────────────────────
 // Options
 // ─────────────────────────────────────────────────────────────
-const PERIODS: { key: Period; label: string }[] = [
-  { key: "today", label: "Aujourd'hui" },
-  { key: "week", label: "Semaine" },
-  { key: "month", label: "Mois" },
-  { key: "inception", label: "Tout" },
-];
-
 const SORT_OPTIONS: { key: SortKey; label: string }[] = [
   { key: "views", label: "Vues" },
   { key: "likes", label: "Likes" },
@@ -276,7 +268,6 @@ export default function AccountDetailPage() {
   const [posts, setPosts] = useState<Post[]>([]);
   const [loadingAcc, setLoadingAcc] = useState(true);
   const [loadingPosts, setLoadingPosts] = useState(true);
-  const [period, setPeriod] = useState<Period>("inception");
   const [sort, setSort] = useState<SortKey>("views");
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
   const [syncing, setSyncing] = useState(false);
@@ -297,10 +288,10 @@ export default function AccountDetailPage() {
     } finally { setLoadingAcc(false); }
   }, [id]);
 
-  const loadPosts = useCallback(async (p: Period) => {
+  const loadPosts = useCallback(async () => {
     setLoadingPosts(true);
     try {
-      const res = await fetch(`/api/instagram/${id}/posts?limit=500&period=${p}`);
+      const res = await fetch(`/api/instagram/${id}/posts?limit=500&period=inception`);
       if (res.ok) {
         const data = await res.json();
         setPosts(data.posts ?? []);
@@ -309,7 +300,7 @@ export default function AccountDetailPage() {
   }, [id]);
 
   useEffect(() => { loadAccount(); }, [loadAccount]);
-  useEffect(() => { loadPosts(period); }, [loadPosts, period]);
+  useEffect(() => { loadPosts(); }, [loadPosts]);
 
   const handleCloseMeta = useCallback(() => {
     const post = activeMetaPost;
@@ -322,16 +313,21 @@ export default function AccountDetailPage() {
     }
   }, [activeMetaPost]);
 
-  async function runApifyScan(mode: "profile" | "reels") {
+  async function runApifyScan(mode: "profile" | "reels"): Promise<{ status: string; postsSaved?: number; snapshotSaved?: boolean; error?: string } | null> {
     const res = await fetch(`/api/instagram/${id}/collect`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ mode }),
     });
-    if (!res.ok) return null;
-    const { runId } = await res.json();
+    const startData = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      return { status: "FAILED", error: startData.error ?? `Erreur ${res.status}` };
+    }
+    const { runId } = startData;
+    if (!runId) return { status: "FAILED", error: "Pas de runId dans la réponse Apify" };
+
     let attempts = 0;
-    while (attempts < 40) {
+    while (attempts < 60) {
       await new Promise((r) => setTimeout(r, 5000));
       const s = await fetch(`/api/instagram/${id}/collect?runId=${runId}`);
       if (s.ok) {
@@ -340,27 +336,38 @@ export default function AccountDetailPage() {
       }
       attempts++;
     }
-    return null;
+    return { status: "FAILED", error: "Timeout — scan trop long (> 5 min)" };
   }
 
   const handleSync = async () => {
     setSyncing(true);
     setScanResult(null);
     try {
-      await runApifyScan("profile");
-      loadAccount();
-      loadPosts(period);
-      setScanResult("Profil synchronisé ✓");
+      const r = await runApifyScan("profile");
+      if (r?.error) {
+        setScanResult(`Erreur : ${r.error}`);
+      } else {
+        setScanResult("Profil synchronisé ✓");
+        loadAccount();
+        loadPosts();
+      }
     } finally { setSyncing(false); }
   };
 
   const handleScanReels = async () => {
     setScanningReels(true);
     setScanResult(null);
+    setScanResult("Scan en cours… (peut prendre 2-4 min)");
     try {
       const r = await runApifyScan("reels");
-      setScanResult(r ? `${r.postsSaved ?? 0} réels récupérés ✓` : "Scan terminé");
-      loadPosts(period);
+      if (r?.error) {
+        setScanResult(`Erreur scan : ${r.error}`);
+      } else if (r?.status === "SUCCEEDED") {
+        setScanResult(`${r.postsSaved ?? 0} réels récupérés ✓`);
+        loadPosts();
+      } else {
+        setScanResult("Scan échoué — vérifie la clé Apify dans Admin");
+      }
     } finally { setScanningReels(false); }
   };
 
@@ -380,8 +387,9 @@ export default function AccountDetailPage() {
 
   // ── Agrégats ──────────────────────────────────────────────
   const snap = account?.latest_snapshot;
-  const withViews = posts.filter((p) => p.views_delta != null);
-  const totalViews = withViews.reduce((s, p) => s + (p.views_delta ?? 0), 0);
+  // On utilise les vues all-time brutes (latest_snapshot), pas le delta période
+  const withViews = posts.filter((p) => (p.latest_snapshot?.views_count ?? p.latest_snapshot?.plays_count) != null);
+  const totalViews = withViews.reduce((s, p) => s + (p.latest_snapshot?.views_count ?? p.latest_snapshot?.plays_count ?? 0), 0);
   const avgViews = withViews.length > 0 ? Math.round(totalViews / withViews.length) : null;
   const postsWithLikes = posts.filter((p) => p.latest_snapshot?.likes_count != null);
   const avgLikes = postsWithLikes.length > 0
@@ -470,25 +478,8 @@ export default function AccountDetailPage() {
       {/* ── Content ─────────────────────────────────────────── */}
       <div className="flex-1 px-6 py-6 max-w-screen-2xl mx-auto w-full">
 
-        {/* ── Period + Stats ─────────────────────────────────── */}
+        {/* ── Stats ──────────────────────────────────────────── */}
         <div className="flex flex-col sm:flex-row sm:items-end gap-4 mb-7">
-          {/* Period pills */}
-          <div className="flex items-center gap-1 bg-zinc-900 border border-zinc-800 rounded-xl p-1">
-            {PERIODS.map((p) => (
-              <button
-                key={p.key}
-                onClick={() => setPeriod(p.key)}
-                className={`px-3.5 py-1.5 text-xs font-semibold rounded-lg transition-all ${
-                  period === p.key
-                    ? "bg-blue-600 text-white shadow"
-                    : "text-zinc-400 hover:text-white"
-                }`}
-              >
-                {p.label}
-              </button>
-            ))}
-          </div>
-
           {/* Stat pills */}
           <div className="flex items-center gap-3 flex-wrap">
             <div className="flex items-center gap-1.5 bg-blue-600/10 border border-blue-500/20 rounded-xl px-4 py-2">
