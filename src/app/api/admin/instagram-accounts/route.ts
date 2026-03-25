@@ -42,7 +42,7 @@ export async function GET(req: NextRequest) {
     .in("instagram_account_id", accountIds)
     .order("collected_at", { ascending: false });
 
-  const latestByAccount = new Map<string, (typeof snapshots)[number]>();
+  const latestByAccount = new Map<string, NonNullable<typeof snapshots>[number]>();
   for (const snap of snapshots ?? []) {
     if (!latestByAccount.has(snap.instagram_account_id)) {
       latestByAccount.set(snap.instagram_account_id, snap);
