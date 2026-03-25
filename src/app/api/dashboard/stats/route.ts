@@ -41,7 +41,7 @@ export async function GET() {
       latestByAccount.set(s.instagram_account_id, s.followers_count);
     }
   }
-  const totalFollowers = [...latestByAccount.values()].reduce(
+  const totalFollowers = [...latestByAccount.values()].reduce<number>(
     (sum, v) => sum + (v ?? 0),
     0
   );
