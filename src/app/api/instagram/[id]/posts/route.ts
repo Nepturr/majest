@@ -76,7 +76,7 @@ export async function GET(
   // Fetch ALL snapshots for these posts (sorted newest first)
   const { data: allSnapshots } = await adminClient
     .from("instagram_post_snapshots")
-    .select("post_id, likes_count, comments_count, views_count, plays_count, collected_at")
+    .select("post_id, likes_count, comments_count, shares_count, views_count, plays_count, collected_at")
     .in("post_id", postIds)
     .order("collected_at", { ascending: false });
 

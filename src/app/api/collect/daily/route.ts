@@ -267,7 +267,7 @@ export async function POST(req: NextRequest) {
 
           const accountId = pending.get(runId)!;
           const itemsRes = await fetch(
-            `${APIFY_BASE}/datasets/${run.defaultDatasetId}/items?token=${apifyKey}&clean=true&format=json`
+            `${APIFY_BASE}/datasets/${run.defaultDatasetId}/items?token=${apifyKey}&format=json&limit=500`
           );
           if (!itemsRes.ok) return;
           const items = await itemsRes.json();
@@ -321,6 +321,7 @@ export async function POST(req: NextRequest) {
                 post_id: upsertedPost.id,
                 likes_count: post.likesCount ?? null,
                 comments_count: post.commentsCount ?? null,
+                shares_count: post.sharesCount ?? null,
                 views_count: post.videoViewCount ?? null,
                 plays_count: post.videoPlayCount ?? null,
                 apify_run_id: runId,

@@ -1,24 +1,26 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
   ArrowLeft, Heart, MessageCircle, Eye, RefreshCw,
   ExternalLink, TrendingUp, Film, Image as ImageIcon,
-  Layers, Play, Users, PenLine,
+  Layers, Play, Users, PenLine, Share2,
 } from "lucide-react";
 import { PostMetadataPanel, hasMetadata } from "@/components/post-metadata-panel";
 import type { PostForPanel, PostMetadata } from "@/components/post-metadata-panel";
+import type { FunnelAccount } from "@/app/api/performance/funnel/route";
 
 // ─────────────────────────────────────────────────────────────
 // Types
 // ─────────────────────────────────────────────────────────────
-type SortKey = "views" | "likes" | "engagement" | "recent" | "comments";
+type SortKey = "views" | "likes" | "engagement" | "recent" | "comments" | "shares";
 type TypeFilter = "all" | "Reel" | "Video" | "Image" | "Sidecar";
 
 interface PostSnapshot {
   likes_count: number | null;
   comments_count: number | null;
+  shares_count: number | null;
   views_count: number | null;
   plays_count: number | null;
   collected_at: string;
@@ -81,11 +83,32 @@ function relativeTime(iso: string | null): string {
   const d = Math.floor(diff / 86400000);
   const h = Math.floor(diff / 3600000);
   const m = Math.floor(diff / 60000);
-  if (d > 365) return `${Math.floor(d / 365)}an`;
+  if (d > 365) return `${Math.floor(d / 365)}y`;
   if (d > 30) return `${Math.floor(d / 30)}mo`;
-  if (d > 0) return `${d}j`;
+  if (d > 0) return `${d}d`;
   if (h > 0) return `${h}h`;
   return `${m}m`;
+}
+
+// ── Funnel bar ────────────────────────────────────────────────
+function FunnelBar({ label, value, pct, color = "bg-blue-600" }: {
+  label: string; value: number | null; pct: number | null; color?: string;
+}) {
+  if (value == null || value === 0) return null;
+  return (
+    <div className="flex items-center gap-3 min-w-0">
+      <div className="w-20 text-right shrink-0">
+        <p className="text-xs font-semibold text-white">{fmt(value)}</p>
+      </div>
+      <div className="flex-1 h-2 bg-zinc-800 rounded-full overflow-hidden">
+        <div className={`h-full rounded-full transition-all ${color}`} style={{ width: `${Math.min(pct ?? 0, 100)}%` }} />
+      </div>
+      <div className="w-24 shrink-0">
+        <p className="text-[10px] text-zinc-500">{label}</p>
+        {pct != null && <p className="text-[9px] text-zinc-700">{pct.toFixed(1)}%</p>}
+      </div>
+    </div>
+  );
 }
 
 function proxyImg(url: string | null | undefined): string | null {
@@ -210,11 +233,11 @@ function ReelCard({ post, metaMap, onOpenMeta }: {
       <div className="p-3.5 flex flex-col gap-2.5 flex-1 min-h-0">
         {/* Caption */}
         <p className={`text-xs leading-relaxed line-clamp-3 ${post.caption ? "text-zinc-400" : "text-zinc-700 italic"}`}>
-          {post.caption ?? "Pas de description"}
+          {post.caption ?? "No caption"}
         </p>
 
         {/* Metrics + date */}
-        <div className="flex items-center gap-3 text-[11px] text-zinc-600 mt-auto pt-1 border-t border-zinc-800">
+        <div className="flex items-center gap-2.5 text-[11px] text-zinc-600 mt-auto pt-1 border-t border-zinc-800 flex-wrap">
           {snap?.likes_count != null && (
             <span className="flex items-center gap-0.5 text-zinc-500">
               <Heart className="w-3 h-3" /> {fmt(snap.likes_count)}
@@ -223,6 +246,11 @@ function ReelCard({ post, metaMap, onOpenMeta }: {
           {snap?.comments_count != null && (
             <span className="flex items-center gap-0.5 text-zinc-500">
               <MessageCircle className="w-3 h-3" /> {fmt(snap.comments_count)}
+            </span>
+          )}
+          {snap?.shares_count != null && (
+            <span className="flex items-center gap-0.5 text-sky-500/70">
+              <Share2 className="w-3 h-3" /> {fmt(snap.shares_count)}
             </span>
           )}
           {er != null && (
@@ -241,19 +269,20 @@ function ReelCard({ post, metaMap, onOpenMeta }: {
 // Options
 // ─────────────────────────────────────────────────────────────
 const SORT_OPTIONS: { key: SortKey; label: string }[] = [
-  { key: "views", label: "Vues" },
-  { key: "likes", label: "Likes" },
+  { key: "views",      label: "Views" },
+  { key: "likes",      label: "Likes" },
+  { key: "shares",     label: "Shares" },
   { key: "engagement", label: "ER" },
-  { key: "recent", label: "Récent" },
-  { key: "comments", label: "Comms" },
+  { key: "comments",   label: "Comments" },
+  { key: "recent",     label: "Recent" },
 ];
 
 const TYPE_OPTIONS: { key: TypeFilter; label: string }[] = [
-  { key: "all", label: "Tout" },
-  { key: "Reel", label: "Réels" },
-  { key: "Video", label: "Vidéos" },
-  { key: "Image", label: "Photos" },
-  { key: "Sidecar", label: "Carrousels" },
+  { key: "all",     label: "All" },
+  { key: "Reel",    label: "Reels" },
+  { key: "Video",   label: "Videos" },
+  { key: "Image",   label: "Photos" },
+  { key: "Sidecar", label: "Carousels" },
 ];
 
 // ─────────────────────────────────────────────────────────────
@@ -266,6 +295,7 @@ export default function AccountDetailPage() {
 
   const [account, setAccount] = useState<Account | null>(null);
   const [posts, setPosts] = useState<Post[]>([]);
+  const [funnel, setFunnel] = useState<FunnelAccount | null>(null);
   const [loadingAcc, setLoadingAcc] = useState(true);
   const [loadingPosts, setLoadingPosts] = useState(true);
   const [sort, setSort] = useState<SortKey>("views");
@@ -275,6 +305,7 @@ export default function AccountDetailPage() {
   const [scanResult, setScanResult] = useState<string | null>(null);
   const [activeMetaPost, setActiveMetaPost] = useState<Post | null>(null);
   const [metaMap, setMetaMap] = useState<Map<string, PostMetadata>>(new Map());
+  const scanResultTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const loadAccount = useCallback(async () => {
     setLoadingAcc(true);
@@ -299,8 +330,18 @@ export default function AccountDetailPage() {
     } finally { setLoadingPosts(false); }
   }, [id]);
 
+  const loadFunnel = useCallback(async () => {
+    const res = await fetch(`/api/performance/funnel?period=inception&accountId=${id}`);
+    if (res.ok) {
+      const data = await res.json();
+      const acc = (data.accounts ?? [])[0] as FunnelAccount | undefined;
+      if (acc) setFunnel(acc);
+    }
+  }, [id]);
+
   useEffect(() => { loadAccount(); }, [loadAccount]);
   useEffect(() => { loadPosts(); }, [loadPosts]);
+  useEffect(() => { loadFunnel(); }, [loadFunnel]);
 
   const handleCloseMeta = useCallback(() => {
     const post = activeMetaPost;
@@ -313,18 +354,22 @@ export default function AccountDetailPage() {
     }
   }, [activeMetaPost]);
 
-  async function runApifyScan(mode: "profile" | "reels"): Promise<{ status: string; postsSaved?: number; itemsRaw?: number; datasetId?: string; errors?: string[]; snapshotSaved?: boolean; error?: string } | null> {
+  function showScanMsg(msg: string) {
+    setScanResult(msg);
+    if (scanResultTimer.current) clearTimeout(scanResultTimer.current);
+    scanResultTimer.current = setTimeout(() => setScanResult(null), 6000);
+  }
+
+  async function runApifyScan(mode: "profile" | "reels"): Promise<{ status: string; postsSaved?: number; snapshotSaved?: boolean; error?: string } | null> {
     const res = await fetch(`/api/instagram/${id}/collect`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ mode }),
     });
     const startData = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      return { status: "FAILED", error: startData.error ?? `Erreur ${res.status}` };
-    }
+    if (!res.ok) return { status: "FAILED", error: startData.error ?? `Error ${res.status}` };
     const { runId } = startData;
-    if (!runId) return { status: "FAILED", error: "Pas de runId dans la réponse Apify" };
+    if (!runId) return { status: "FAILED", error: "No runId in Apify response" };
 
     let attempts = 0;
     while (attempts < 60) {
@@ -336,46 +381,30 @@ export default function AccountDetailPage() {
       }
       attempts++;
     }
-    return { status: "FAILED", error: "Timeout — scan trop long (> 5 min)" };
+    return { status: "FAILED", error: "Timeout (> 5 min)" };
   }
 
   const handleSync = async () => {
     setSyncing(true);
-    setScanResult(null);
     try {
       const r = await runApifyScan("profile");
-      if (r?.error) {
-        setScanResult(`Erreur : ${r.error}`);
-      } else {
-        setScanResult("Profil synchronisé ✓");
-        loadAccount();
-        loadPosts();
-      }
+      if (r?.error) showScanMsg(`Error: ${r.error}`);
+      else { showScanMsg("Profile synced ✓"); loadAccount(); loadPosts(); }
     } finally { setSyncing(false); }
   };
 
   const handleScanReels = async () => {
     setScanningReels(true);
-    setScanResult(null);
-    setScanResult("Scan en cours… (peut prendre 2-4 min)");
+    showScanMsg("Scanning… (2–4 min)");
     try {
       const r = await runApifyScan("reels");
-      if (r?.error) {
-        setScanResult(`Erreur scan : ${r.error}`);
-      } else if (r?.status === "SUCCEEDED") {
+      if (r?.error) showScanMsg(`Error: ${r.error}`);
+      else if (r?.status === "SUCCEEDED") {
         const saved = r.postsSaved ?? 0;
-        const raw = r.itemsRaw ?? 0;
-        if (saved === 0 && raw === 0) {
-          setScanResult(`0 réels récupérés — dataset vide (compte privé ou quota Apify atteint ?)`);
-        } else if (saved === 0 && raw > 0) {
-          const firstErr = r.errors?.[0] ?? "raison inconnue";
-          setScanResult(`${raw} items reçus, 0 sauvegardés — ${firstErr}`);
-        } else {
-          setScanResult(`${saved} réels récupérés ✓`);
-          loadPosts();
-        }
+        if (saved === 0) showScanMsg("0 reels — private account or Apify quota reached");
+        else { showScanMsg(`${saved} reels saved ✓`); loadPosts(); loadFunnel(); }
       } else {
-        setScanResult("Scan échoué — vérifie la clé Apify dans Admin");
+        showScanMsg("Scan failed — check Apify key in Admin");
       }
     } finally { setScanningReels(false); }
   };
@@ -387,7 +416,8 @@ export default function AccountDetailPage() {
     const bv = b.views_delta ?? b.latest_snapshot?.views_count ?? b.latest_snapshot?.plays_count ?? 0;
     switch (sort) {
       case "views": return bv - av;
-      case "likes": return (b.latest_snapshot?.likes_count ?? 0) - (a.latest_snapshot?.likes_count ?? 0);
+      case "likes":    return (b.latest_snapshot?.likes_count ?? 0) - (a.latest_snapshot?.likes_count ?? 0);
+      case "shares":   return (b.latest_snapshot?.shares_count ?? 0) - (a.latest_snapshot?.shares_count ?? 0);
       case "comments": return (b.latest_snapshot?.comments_count ?? 0) - (a.latest_snapshot?.comments_count ?? 0);
       case "engagement": return (engagementRate(b) ?? 0) - (engagementRate(a) ?? 0);
       default: return (b.posted_at ?? "").localeCompare(a.posted_at ?? "");
@@ -427,7 +457,7 @@ export default function AccountDetailPage() {
             className="flex items-center gap-1.5 text-zinc-500 hover:text-white transition-colors text-sm shrink-0"
           >
             <ArrowLeft className="w-4 h-4" />
-            <span className="hidden sm:inline">Retour</span>
+            <span className="hidden sm:inline">Back</span>
           </button>
 
           {/* Identity */}
@@ -441,7 +471,7 @@ export default function AccountDetailPage() {
                 <p className="text-xs text-zinc-500 mt-0.5">
                   {fmt(snap?.followers_count)} followers
                   {account.model && <span className="ml-2 text-zinc-600">· {account.model.name}</span>}
-                  {snap?.collected_at && <span className="ml-2 text-zinc-700">· sync {relativeTime(snap.collected_at)}</span>}
+                  {snap?.collected_at && <span className="ml-2 text-zinc-700">· synced {relativeTime(snap.collected_at)}</span>}
                 </p>
               </div>
             </div>
@@ -449,7 +479,11 @@ export default function AccountDetailPage() {
 
           {/* Scan result */}
           {scanResult && (
-            <span className="text-xs text-emerald-400 bg-emerald-900/20 border border-emerald-700/30 rounded-lg px-2.5 py-1">
+            <span className={`text-xs rounded-lg px-2.5 py-1 ${
+              scanResult.includes("Error") || scanResult.includes("failed") || scanResult.includes("0 reels")
+                ? "text-orange-400 bg-orange-900/20 border border-orange-700/30"
+                : "text-emerald-400 bg-emerald-900/20 border border-emerald-700/30"
+            }`}>
               {scanResult}
             </span>
           )}
@@ -459,26 +493,26 @@ export default function AccountDetailPage() {
             <a
               href={`https://instagram.com/${account?.instagram_handle ?? ""}`}
               target="_blank" rel="noopener noreferrer"
-              className="flex items-center gap-1.5 text-xs text-zinc-500 hover:text-white border border-zinc-700 hover:border-zinc-500 rounded-lg px-2.5 py-1.5 transition-all"
+              className="w-8 h-8 flex items-center justify-center text-zinc-500 hover:text-white border border-zinc-700 hover:border-zinc-500 rounded-lg transition-all"
+              title="Open on Instagram"
             >
               <ExternalLink className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Instagram</span>
             </a>
             <button
               onClick={handleScanReels}
               disabled={isBusy}
-              className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-purple-700 hover:bg-purple-600 text-white transition-colors disabled:opacity-50"
+              title="Scan Reels"
+              className="w-8 h-8 flex items-center justify-center rounded-lg bg-purple-700 hover:bg-purple-600 text-white transition-colors disabled:opacity-50"
             >
-              <Film className={`w-3.5 h-3.5 ${scanningReels ? "animate-spin" : ""}`} />
-              {scanningReels ? "Scan…" : "Scan Réels"}
+              <Film className={`w-3.5 h-3.5 ${scanningReels ? "animate-pulse" : ""}`} />
             </button>
             <button
               onClick={handleSync}
               disabled={isBusy}
-              className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-zinc-700 hover:bg-zinc-600 text-white transition-colors disabled:opacity-50"
+              title="Sync profile"
+              className="w-8 h-8 flex items-center justify-center rounded-lg bg-zinc-700 hover:bg-zinc-600 text-white transition-colors disabled:opacity-50"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${syncing ? "animate-spin" : ""}`} />
-              {syncing ? "Sync…" : "Sync profil"}
             </button>
           </div>
         </div>
@@ -487,19 +521,19 @@ export default function AccountDetailPage() {
       {/* ── Content ─────────────────────────────────────────── */}
       <div className="flex-1 px-6 py-6 max-w-screen-2xl mx-auto w-full">
 
-        {/* ── Stats ──────────────────────────────────────────── */}
-        <div className="flex flex-col sm:flex-row sm:items-end gap-4 mb-7">
+        {/* ── Stats + Funnel ─────────────────────────────────── */}
+        <div className="flex flex-col lg:flex-row gap-4 mb-7">
           {/* Stat pills */}
           <div className="flex items-center gap-3 flex-wrap">
             <div className="flex items-center gap-1.5 bg-blue-600/10 border border-blue-500/20 rounded-xl px-4 py-2">
               <Eye className="w-3.5 h-3.5 text-blue-400" />
               <span className="text-lg font-bold text-blue-300">{fmt(totalViews)}</span>
-              <span className="text-[10px] text-blue-600 uppercase tracking-wide">vues</span>
+              <span className="text-[10px] text-blue-600 uppercase tracking-wide">views</span>
             </div>
             <div className="flex items-center gap-1.5 bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-2">
               <Eye className="w-3 h-3 text-zinc-500" />
               <span className="text-sm font-bold text-white">{fmt(avgViews)}</span>
-              <span className="text-[10px] text-zinc-600">avg</span>
+              <span className="text-[10px] text-zinc-600">avg views</span>
             </div>
             <div className="flex items-center gap-1.5 bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-2">
               <Heart className="w-3 h-3 text-zinc-500" />
@@ -511,8 +545,41 @@ export default function AccountDetailPage() {
               <span className="text-sm font-bold text-white">{avgEr != null ? `${avgEr.toFixed(1)}%` : "—"}</span>
               <span className="text-[10px] text-zinc-600">avg ER</span>
             </div>
-            <div className="text-xs text-zinc-700">{posts.length} posts en DB</div>
+            <div className="text-xs text-zinc-700">{posts.length} posts in DB</div>
           </div>
+
+          {/* Funnel widget */}
+          {funnel && (
+            <div className="bg-zinc-900 border border-zinc-800 rounded-xl px-5 py-4 min-w-[280px] flex-1 max-w-sm">
+              <p className="text-[10px] text-zinc-600 uppercase tracking-wide font-medium mb-3">Funnel (all-time)</p>
+              {(() => {
+                const views = funnel.instagram.views_current ?? 0;
+                const bioClicks = funnel.gms?.clicks ?? 0;
+                const trackClicks = funnel.tracking?.clicks_total ?? 0;
+                const subs = funnel.tracking?.subscribers_total ?? 0;
+                const rev = funnel.tracking?.revenue_total;
+                const top = views || 1;
+                return (
+                  <div className="space-y-1.5">
+                    <FunnelBar label="Views" value={views} pct={100} color="bg-blue-600" />
+                    <FunnelBar label="Bio Clicks" value={bioClicks}
+                      pct={views > 0 ? (bioClicks / views) * 100 : null} color="bg-indigo-500" />
+                    <FunnelBar label="Track Clicks" value={trackClicks}
+                      pct={top > 0 ? (trackClicks / top) * 100 : null} color="bg-violet-500" />
+                    <FunnelBar label="Subscribers" value={subs}
+                      pct={top > 0 ? (subs / top) * 100 : null} color="bg-emerald-500" />
+                    {rev != null && rev > 0 && (
+                      <div className="pt-1.5 mt-1 border-t border-zinc-800 flex items-center justify-between text-xs">
+                        <span className="text-zinc-500">Revenue</span>
+                        <span className="font-semibold text-emerald-400">${rev.toFixed(0)}</span>
+                        {subs > 0 && <span className="text-zinc-600 text-[10px]">LTV ${(rev / subs).toFixed(2)}</span>}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+            </div>
+          )}
         </div>
 
         {/* ── Filters & Sort ─────────────────────────────────── */}
@@ -543,7 +610,7 @@ export default function AccountDetailPage() {
 
           {/* Sort */}
           <div className="flex items-center gap-1.5 flex-wrap">
-            <span className="text-[10px] text-zinc-600 uppercase tracking-wide">Trier par</span>
+            <span className="text-[10px] text-zinc-600 uppercase tracking-wide">Sort by</span>
             {SORT_OPTIONS.map((opt) => (
               <button
                 key={opt.key}
@@ -577,15 +644,15 @@ export default function AccountDetailPage() {
         ) : sorted.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-32 text-zinc-700">
             <Users className="w-12 h-12 mb-4 opacity-20" />
-            <p className="text-base font-medium text-zinc-500">Aucun post trouvé</p>
-            <p className="text-sm mt-1">Lance &quot;Scan Réels&quot; pour récupérer les réels depuis Instagram</p>
+            <p className="text-base font-medium text-zinc-500">No posts found</p>
+            <p className="text-sm mt-1">Click the <Film className="inline w-3.5 h-3.5 mx-0.5" /> button to scan reels from Instagram</p>
             <button
               onClick={handleScanReels}
               disabled={isBusy}
               className="mt-5 flex items-center gap-2 px-4 py-2 rounded-xl bg-purple-700 hover:bg-purple-600 text-white text-sm font-medium transition-colors disabled:opacity-50"
             >
               <Film className="w-4 h-4" />
-              Scan Réels maintenant
+              Scan Reels now
             </button>
           </div>
         ) : (

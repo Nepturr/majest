@@ -81,6 +81,7 @@ export async function GET(req: NextRequest) {
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const period = (req.nextUrl.searchParams.get("period") as Period | null) ?? "week";
+  const accountId = req.nextUrl.searchParams.get("accountId"); // optional filter
   const { start, end } = getPeriodRange(period);
   const startIso = start.toISOString();
   const startDate = start.toISOString().split("T")[0]; // YYYY-MM-DD
@@ -88,7 +89,7 @@ export async function GET(req: NextRequest) {
   const adminClient = createAdminClient();
 
   // ── 1. Accounts ───────────────────────────────────────────────
-  const { data: accounts, error: accErr } = await adminClient
+  let accQuery = adminClient
     .from("instagram_accounts")
     .select(`
       id, instagram_handle, status, niche,
@@ -96,6 +97,10 @@ export async function GET(req: NextRequest) {
       model:models(id, name, avatar_url)
     `)
     .order("created_at", { ascending: false });
+
+  if (accountId) accQuery = accQuery.eq("id", accountId);
+
+  const { data: accounts, error: accErr } = await accQuery;
 
   if (accErr || !accounts) {
     return NextResponse.json({ error: accErr?.message ?? "Failed to load accounts" }, { status: 500 });

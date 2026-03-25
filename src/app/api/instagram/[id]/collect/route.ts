@@ -152,8 +152,7 @@ export async function GET(
   const items: ApifyItem[] = await itemsRes.json();
 
   if (!items || items.length === 0) {
-    // Retourne aussi le datasetId pour diagnostic
-    return NextResponse.json({ runId, status, snapshotSaved: false, postsSaved: 0, datasetId, itemsRaw: 0 });
+    return NextResponse.json({ runId, status, snapshotSaved: false, postsSaved: 0 });
   }
 
   const adminClient = createAdminClient();
@@ -201,11 +200,9 @@ export async function GET(
     status,
     snapshotSaved,
     postsSaved,
-    itemsRaw: items.length,
-    datasetId,
-    // Premiers erreurs pour diagnostic (max 5)
-    errors: upsertErrors.slice(0, 5),
     finishedAt: run.finishedAt ?? null,
+    // debug info (hidden from UI but useful in logs)
+    _debug: upsertErrors.length > 0 ? { errors: upsertErrors.slice(0, 3), itemsRaw: items.length } : undefined,
   });
 }
 
@@ -263,6 +260,7 @@ async function upsertPosts(
         post_id: upsertedPost.id,
         likes_count: post.likesCount ?? null,
         comments_count: post.commentsCount ?? null,
+        shares_count: post.sharesCount ?? null,
         views_count: post.videoViewCount ?? null,
         plays_count: post.videoPlayCount ?? null,
         apify_run_id: runId,
@@ -303,9 +301,10 @@ interface ApifyPost {
   timestamp?: string;
   likesCount?: number;
   commentsCount?: number;
+  sharesCount?: number;
   videoViewCount?: number;
   videoPlayCount?: number;
-  videoDuration?: number; // durée en secondes (réels/vidéos)
+  videoDuration?: number;
 }
 
 interface ApifyInstagramProfile {

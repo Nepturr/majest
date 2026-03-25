@@ -457,7 +457,20 @@ export default function PerformancePage() {
   const [collecting, setCollecting] = useState(false);
   const [collectMsg, setCollectMsg] = useState<string | null>(null);
   const [collectSources, setCollectSources] = useState<Set<string>>(new Set(["gms", "ofapi", "instagram"]));
+  const [collectOpen, setCollectOpen] = useState(false);
+  const collectRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    function onClickOutside(e: MouseEvent) {
+      if (collectRef.current && !collectRef.current.contains(e.target as Node)) {
+        setCollectOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", onClickOutside);
+    return () => document.removeEventListener("mousedown", onClickOutside);
+  }, []);
 
   function toggleSource(s: string) {
     setCollectSources((prev) => {
@@ -562,45 +575,56 @@ export default function PerformancePage() {
           </div>
 
           <div className="flex items-center gap-3 flex-wrap">
-            {/* Collect — source toggles + button */}
-            <div className="flex items-center gap-1.5 bg-zinc-900 border border-zinc-800 rounded-xl px-2 py-1.5">
-              {([
-                { key: "instagram", label: "Instagram" },
-                { key: "gms",       label: "GMS" },
-                { key: "ofapi",     label: "OnlyFans" },
-              ] as const).map(({ key, label }) => (
-                <button
-                  key={key}
-                  onClick={() => toggleSource(key)}
-                  disabled={collecting}
-                  className={`px-2.5 py-1 text-xs rounded-lg font-medium border transition-all ${
-                    collectSources.has(key)
-                      ? "bg-blue-600/20 border-blue-500/40 text-blue-300"
-                      : "border-zinc-700 text-zinc-600 hover:text-zinc-400"
-                  }`}
-                >
-                  {label}
-                </button>
-              ))}
-              <div className="w-px h-4 bg-zinc-700 mx-1" />
+            {/* Collect button — icon + dropdown */}
+            <div className="relative" ref={collectRef}>
               <button
-                onClick={handleCollect}
+                onClick={() => !collecting && setCollectOpen((v) => !v)}
                 disabled={collecting}
-                className="text-xs px-3 py-1 rounded-lg bg-zinc-700 hover:bg-zinc-600 text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5 font-medium"
+                title="Collect data"
+                className="w-9 h-9 flex items-center justify-center rounded-xl border border-zinc-700 bg-zinc-900 hover:bg-zinc-800 hover:border-zinc-500 text-zinc-400 hover:text-white transition-all disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {collecting ? (
-                  <svg className="animate-spin w-3 h-3" viewBox="0 0 24 24" fill="none">
+                  <svg className="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none">
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
                   </svg>
                 ) : (
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-3 h-3">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4">
                     <path d="M4 4v5h5M20 20v-5h-5"/>
                     <path d="M4 9a9 9 0 0115 0M20 15a9 9 0 01-15 0"/>
                   </svg>
                 )}
-                {collecting ? "Collecte…" : "Go"}
               </button>
+
+              {/* Dropdown */}
+              {collectOpen && !collecting && (
+                <div className="absolute right-0 top-10 z-50 w-52 bg-zinc-900 border border-zinc-700 rounded-xl shadow-xl p-3 space-y-2">
+                  <p className="text-[10px] text-zinc-500 uppercase tracking-wide font-medium px-1 pb-1">Collect sources</p>
+                  {([
+                    { key: "instagram", label: "Instagram (Apify)" },
+                    { key: "gms",       label: "GMS (Bio clicks)" },
+                    { key: "ofapi",     label: "OnlyFans (OFAPI)" },
+                  ] as const).map(({ key, label }) => (
+                    <label key={key} className="flex items-center gap-2.5 px-1 py-0.5 cursor-pointer group">
+                      <input
+                        type="checkbox"
+                        checked={collectSources.has(key)}
+                        onChange={() => toggleSource(key)}
+                        className="w-3.5 h-3.5 accent-blue-500 cursor-pointer"
+                      />
+                      <span className="text-sm text-zinc-300 group-hover:text-white transition-colors">{label}</span>
+                    </label>
+                  ))}
+                  <div className="pt-1 border-t border-zinc-800">
+                    <button
+                      onClick={() => { setCollectOpen(false); handleCollect(); }}
+                      className="w-full py-1.5 text-sm font-medium bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors"
+                    >
+                      Collect now
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Period selector */}
