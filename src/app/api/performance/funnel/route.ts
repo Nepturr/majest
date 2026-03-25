@@ -270,7 +270,7 @@ export async function GET() {
       instagram_handle: account.instagram_handle,
       status: account.status as "active" | "inactive",
       niche: account.niche,
-      model: account.model as { name: string; avatar_url: string | null } | null,
+      model: account.model as unknown as { name: string; avatar_url: string | null } | null,
       get_my_social_link_id: account.get_my_social_link_id,
       get_my_social_link_name: account.get_my_social_link_name,
       of_tracking_link_id: account.of_tracking_link_id,
