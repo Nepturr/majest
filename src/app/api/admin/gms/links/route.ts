@@ -32,22 +32,37 @@ export async function GET() {
     return NextResponse.json({ error: "GetMySocial API key not configured." }, { status: 400 });
   }
 
-  const res = await fetch("https://getmysocial.com/api/v2/links", {
-    headers: { "x-api-key": setting.value },
-  });
+  type GmsLink = { _id: string; displayName?: string; originalLink?: string; typeLink?: string };
 
-  if (!res.ok) {
-    return NextResponse.json({ error: `GMS API error: HTTP ${res.status}` }, { status: 502 });
+  // Fetch all pages — GMS paginates with ?page=N&limit=100
+  const allLinks: GmsLink[] = [];
+  let page = 1;
+  const limit = 100;
+
+  while (true) {
+    const res = await fetch(
+      `https://getmysocial.com/api/v2/links?page=${page}&limit=${limit}`,
+      { headers: { "x-api-key": setting.value } }
+    );
+
+    if (!res.ok) {
+      return NextResponse.json({ error: `GMS API error: HTTP ${res.status}` }, { status: 502 });
+    }
+
+    const json = await res.json();
+    const pageLinks: GmsLink[] = json.data ?? json.links ?? (Array.isArray(json) ? json : []);
+
+    allLinks.push(...pageLinks);
+
+    // Stop when we get fewer results than the limit (last page) or meta says no more
+    const meta = json.meta ?? {};
+    const totalPages = meta.totalPages ?? meta.total_pages ?? meta.lastPage ?? meta.last_page;
+    if (totalPages && page >= totalPages) break;
+    if (pageLinks.length < limit) break;
+    page++;
   }
 
-  const json = await res.json();
-  // GMS response: { success, data: [...], meta }
-  const rawLinks: {
-    _id: string;
-    displayName?: string;
-    originalLink?: string;
-    typeLink?: string;
-  }[] = json.data ?? json.links ?? (Array.isArray(json) ? json : []);
+  const rawLinks = allLinks;
 
   // Get already-assigned GMS link IDs from our DB
   const { data: assigned } = await adminClient
