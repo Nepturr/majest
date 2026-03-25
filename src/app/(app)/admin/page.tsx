@@ -281,6 +281,7 @@ function LoraDropZone({
 ───────────────────────────────────────────── */
 function ModelsTab() {
   const [models, setModels] = useState<Model[]>([]);
+  const [accountsByModel, setAccountsByModel] = useState<Record<string, Account[]>>({});
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
   const [editModel, setEditModel] = useState<Model | null>(null);
@@ -289,9 +290,22 @@ function ModelsTab() {
 
   const fetchModels = useCallback(async () => {
     setLoading(true);
-    const res = await fetch("/api/admin/models");
-    const data = await res.json();
-    setModels(data.models ?? []);
+    const [modelsRes, accountsRes] = await Promise.all([
+      fetch("/api/admin/models"),
+      fetch("/api/admin/accounts"),
+    ]);
+    const modelsData = await modelsRes.json();
+    const accountsData = await accountsRes.json();
+
+    setModels(modelsData.models ?? []);
+
+    // Group accounts by model_id
+    const grouped: Record<string, Account[]> = {};
+    for (const account of (accountsData.accounts ?? []) as Account[]) {
+      if (!grouped[account.model_id]) grouped[account.model_id] = [];
+      grouped[account.model_id].push(account);
+    }
+    setAccountsByModel(grouped);
     setLoading(false);
   }, []);
 
@@ -379,10 +393,10 @@ function ModelsTab() {
                   <td className="px-5 py-4">
                     <button
                       onClick={() => setAccountsModel(model)}
-                      className="inline-flex items-center gap-1.5 text-xs text-accent-light hover:text-accent transition-colors"
+                      className="flex items-center gap-2 group"
+                      title="Manage OF accounts"
                     >
-                      <UserPlus className="w-3.5 h-3.5" />
-                      Manage
+                      <OFAccountsAvatars accounts={accountsByModel[model.id] ?? []} />
                     </button>
                   </td>
                   <td className="px-5 py-4">
@@ -446,10 +460,65 @@ function ModelsTab() {
       {accountsModel && (
         <ModelAccountsModal
           model={accountsModel}
-          onClose={() => setAccountsModel(null)}
+          onClose={() => { setAccountsModel(null); fetchModels(); }}
         />
       )}
     </>
+  );
+}
+
+/* ─── OF Accounts Avatars (stacked) ─── */
+function OFAccountsAvatars({ accounts }: { accounts: Account[] }) {
+  const MAX_VISIBLE = 3;
+  const visible = accounts.slice(0, MAX_VISIBLE);
+  const overflow = accounts.length - MAX_VISIBLE;
+
+  if (accounts.length === 0) {
+    return (
+      <span className="inline-flex items-center gap-1 text-xs text-muted-foreground group-hover:text-accent-light transition-colors">
+        <UserPlus className="w-3.5 h-3.5" />
+        Link
+      </span>
+    );
+  }
+
+  return (
+    <div className="flex items-center gap-2">
+      <div className="flex items-center">
+        {visible.map((account, i) => (
+          <div
+            key={account.id}
+            className="w-7 h-7 rounded-full border-2 border-card bg-accent/15 overflow-hidden shrink-0"
+            style={{ marginLeft: i > 0 ? "-8px" : "0", zIndex: visible.length - i }}
+          >
+            {account.of_avatar_url ? (
+              <img
+                src={account.of_avatar_url}
+                alt={account.of_username ?? ""}
+                className="w-full h-full object-cover"
+                onError={(e) => {
+                  const el = e.target as HTMLImageElement;
+                  el.style.display = "none";
+                  el.parentElement!.innerHTML = `<span class="w-full h-full flex items-center justify-center text-[10px] font-bold text-accent-light">${(account.of_username?.[0] ?? "?").toUpperCase()}</span>`;
+                }}
+              />
+            ) : (
+              <span className="w-full h-full flex items-center justify-center text-[10px] font-bold text-accent-light">
+                {(account.of_username?.[0] ?? "?").toUpperCase()}
+              </span>
+            )}
+          </div>
+        ))}
+        {overflow > 0 && (
+          <div
+            className="w-7 h-7 rounded-full border-2 border-card bg-muted-foreground/20 flex items-center justify-center shrink-0 text-[10px] font-bold text-muted-foreground"
+            style={{ marginLeft: "-8px" }}
+          >
+            +{overflow}
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 
