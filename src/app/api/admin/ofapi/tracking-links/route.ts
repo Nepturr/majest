@@ -45,7 +45,8 @@ export async function GET(req: NextRequest) {
     `https://app.onlyfansapi.com/api/${accountId}/tracking-links?limit=100`;
 
   while (nextUrl) {
-    const pageRes = await fetch(nextUrl, {
+    const currentUrl: string = nextUrl;
+    const pageRes: Response = await fetch(currentUrl, {
       headers: { Authorization: `Bearer ${setting.value}` },
     });
 
