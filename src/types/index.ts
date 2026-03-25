@@ -141,3 +141,57 @@ export interface OFApiAccount {
   assignedToModelId: string | null;
   assignedToModelName: string | null;
 }
+
+// ── Instagram Analytics ────────────────────────────────────────
+
+/** Snapshot des métriques d'un compte Instagram à un instant T */
+export interface InstagramAccountSnapshot {
+  id: string;
+  instagram_account_id: string;
+  followers_count: number | null;
+  following_count: number | null;
+  posts_count: number | null;
+  bio: string | null;
+  is_verified: boolean;
+  profile_pic_url: string | null;
+  apify_run_id: string | null;
+  collected_at: string;
+}
+
+/** Structure invariante d'un post/reel Instagram */
+export interface InstagramPost {
+  id: string;
+  instagram_account_id: string;
+  shortcode: string;
+  post_type: "Image" | "Video" | "Sidecar";
+  url: string | null;
+  caption: string | null;
+  thumbnail_url: string | null;
+  posted_at: string | null;
+  first_seen_at: string;
+  updated_at: string;
+  /** Dernier snapshot de métriques (joint depuis instagram_post_snapshots) */
+  latest_snapshot?: InstagramPostSnapshot | null;
+}
+
+/** Métriques d'un post Instagram à un instant T */
+export interface InstagramPostSnapshot {
+  id: string;
+  post_id: string;
+  likes_count: number | null;
+  comments_count: number | null;
+  views_count: number | null;
+  plays_count: number | null;
+  apify_run_id: string | null;
+  collected_at: string;
+}
+
+/** Résultat d'un run de collecte Apify */
+export interface ApifyCollectResult {
+  runId: string;
+  status: "READY" | "RUNNING" | "SUCCEEDED" | "FAILED" | "ABORTING" | "ABORTED" | "TIMING-OUT" | "TIMED-OUT";
+  datasetId: string | null;
+  snapshotSaved: boolean;
+  postsSaved: number;
+  finishedAt: string | null;
+}

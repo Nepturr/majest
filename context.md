@@ -62,11 +62,44 @@ Champs clés :
 
 ### Table `settings`
 Stockage clé-valeur pour les clés API. Accessible uniquement via service_role (aucune RLS publique).
-Clés utilisées : `gms_api_key`, `ofapi_api_key`, `oneup_api_key`.
+Clés utilisées : `gms_api_key`, `ofapi_api_key`, `oneup_api_key`, `apify_api_key`.
+
+### Table `instagram_account_snapshots`
+Snapshot des métriques d'un compte Instagram à chaque collecte Apify. Permet de tracer l'évolution dans le temps.
+Champs : `id`, `instagram_account_id` (FK → instagram_accounts), `followers_count`, `following_count`, `posts_count`, `bio`, `is_verified`, `profile_pic_url`, `apify_run_id`, `collected_at`.
+Index : `(instagram_account_id, collected_at DESC)`.
+
+### Table `instagram_posts`
+Structure invariante d'un post/reel Instagram (ne change pas dans le temps). Identifié par son `shortcode`.
+Champs : `id`, `instagram_account_id` (FK → instagram_accounts), `shortcode` (unique), `post_type` (Image/Video/Sidecar), `url`, `caption`, `thumbnail_url`, `posted_at`, `first_seen_at`, `updated_at`.
+Index : `(instagram_account_id, posted_at DESC)`.
+
+### Table `instagram_post_snapshots`
+Métriques d'un post à un instant T. Permet de tracer l'évolution des performances (likes, views, plays).
+Champs : `id`, `post_id` (FK → instagram_posts), `likes_count`, `comments_count`, `views_count`, `plays_count`, `apify_run_id`, `collected_at`.
+Index : `(post_id, collected_at DESC)`.
 
 ---
 
 ## APIs externes
+
+### Apify (apify.com)
+- Base URL : `https://api.apify.com/v2`
+- Auth : query param `?token={apify_api_key}` (stockée dans `settings.apify_api_key`)
+- Actor utilisé : `apify~instagram-scraper`
+- Usage : scraping Instagram — métriques de profil (followers, following, posts count) et métriques de posts (likes, comments, views, plays)
+- **Endpoints utilisés dans Majest :**
+  - `GET /v2/users/me?token=...` — test de connexion → retourne `{ data: { username, plan } }`. Test : `GET /api/admin/apify/test`
+  - `POST /v2/acts/apify~instagram-scraper/runs?token=...` — lance un run asynchrone. Input : `{ directUrls, resultsType: "details", resultsLimit, proxy }`. Retourne : `{ data: { id (runId), status, defaultDatasetId } }`
+  - `GET /v2/acts/apify~instagram-scraper/runs/{runId}?token=...` — statut d'un run. `status` ∈ `READY | RUNNING | SUCCEEDED | FAILED | TIMED-OUT | ABORTED`
+  - `GET /v2/datasets/{datasetId}/items?token=...&clean=true&format=json` — récupère les résultats du scrape. Pour `resultsType: "details"`, retourne un tableau d'objets `ApifyInstagramProfile` (voir type dans la route collect)
+- **Flow de collecte :**
+  1. `POST /api/instagram/{igAccountId}/collect` → lance le run Apify, retourne `{ runId, status, datasetId }`
+  2. Frontend poll `GET /api/instagram/{igAccountId}/collect?runId=xxx` jusqu'à `status === "SUCCEEDED"`
+  3. Quand SUCCEEDED : la route parse les données et insère dans `instagram_account_snapshots` + `instagram_posts` + `instagram_post_snapshots`
+- **Champs parsés depuis Apify :**
+  - Profil : `followersCount`, `followsCount`, `postsCount`, `biography`, `verified`, `profilePicUrlHD`
+  - Posts (depuis `latestPosts[]`) : `shortCode`, `type`, `url`, `caption`, `displayUrl`, `timestamp`, `likesCount`, `commentsCount`, `videoViewCount`, `videoPlayCount`
 
 ### OneUp (oneupapp.io)
 - Base URL : `https://www.oneupapp.io/api`
@@ -121,6 +154,7 @@ Clés utilisées : `gms_api_key`, `ofapi_api_key`, `oneup_api_key`.
 - `GET /api/admin/gms/test` — teste la clé GMS (appelle `/api/v2/links?limit=1`)
 - `GET /api/admin/ofapi/test` — teste la clé OFAPI (appelle `/api/client-sessions`)
 - `GET /api/admin/oneup/test` — teste la clé OneUp (appelle `/api/listcategory`)
+- `GET /api/admin/apify/test` — teste la clé Apify (appelle `/v2/users/me`). Retourne `{ ok, username, plan }`
 
 ### Admin — Models (`/api/admin/models`)
 - `GET` — liste toutes les modèles
@@ -139,6 +173,12 @@ Clés utilisées : `gms_api_key`, `ofapi_api_key`, `oneup_api_key`.
 - `PATCH /[id]` — met à jour
 - `DELETE /[id]` — supprime
 - Unicité DB : `oneup_social_network_id`, `get_my_social_link_id`, `of_tracking_link_id`
+
+### Instagram Analytics (`/api/instagram/[id]/`)
+- `POST /api/instagram/[id]/collect` — lance un run Apify asynchrone pour le compte IG `id`. Retourne `{ runId, status, datasetId }`.
+- `GET /api/instagram/[id]/collect?runId=xxx` — vérifie le statut d'un run Apify. Si `SUCCEEDED`, parse et stocke les données dans les 3 tables analytics. Retourne `{ runId, status, snapshotSaved, postsSaved, finishedAt }`.
+- `GET /api/instagram/[id]/snapshots?limit=90` — liste l'historique des snapshots de compte (évolution followers etc.), triés du plus récent au plus ancien.
+- `GET /api/instagram/[id]/posts?limit=30&type=Video` — liste les posts avec le dernier snapshot de métriques joint.
 
 ### Proxies API externes
 - `GET /api/admin/oneup/social-accounts` — retourne les comptes Instagram OneUp (via `listsocialaccounts`, filtre `social_network_type = instagram`), avec flag `isAssigned`
@@ -204,6 +244,15 @@ Chaque compte Instagram (`instagram_accounts`) connecte :
 ---
 
 ## Historique des Mises à Jour
+
+### v0.4.0 — 25 Mars 2026
+- Intégration Apify Instagram API : clé dans Admin → API (carte Apify + test connexion)
+- DB : 3 nouvelles tables pour les analytics Instagram avec évolution temporelle
+  - `instagram_account_snapshots` : métriques profil (followers, following, posts count) par collecte
+  - `instagram_posts` : structure invariante des posts/reels (shortcode, type, caption, date de pub)
+  - `instagram_post_snapshots` : métriques de performance d'un post à chaque collecte (likes, comments, views, plays)
+- Routes API : collecte async Apify (`POST + GET /api/instagram/[id]/collect`), snapshots compte (`/snapshots`), posts avec métriques (`/posts`)
+- Migration SQL : `supabase/migrations/001_instagram_analytics.sql`
 
 ### v0.3.x — 25 Mars 2026
 - Feature "Accounts" : page `/accounts` complète pour gérer les comptes Instagram
