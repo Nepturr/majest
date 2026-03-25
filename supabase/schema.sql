@@ -123,6 +123,25 @@ create trigger on_account_updated
 
 
 -- ============================================================
+-- SETTINGS TABLE
+-- Stockage clé-valeur pour les clés API et configs (service_role only)
+-- ============================================================
+
+create table if not exists public.settings (
+  key        text        primary key,
+  value      text        not null,
+  updated_at timestamptz not null default now()
+);
+
+alter table public.settings enable row level security;
+-- Pas de policy publique : accessible uniquement via service_role (API routes)
+
+create trigger on_settings_updated
+  before update on public.settings
+  for each row execute procedure public.handle_updated_at();
+
+
+-- ============================================================
 -- BOOTSTRAP: Create your first admin profile
 -- ============================================================
 

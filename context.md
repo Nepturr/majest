@@ -36,6 +36,19 @@ L'outil doit être :
 - Scoring de performance
 - Historique des analyses
 
+## APIs externes
+
+### GetMySocial API v2
+- Base URL : `https://getmysocial.com`
+- Auth : header `x-api-key` (clé stockée dans `settings.gms_api_key`, jamais exposée côté client)
+- Endpoints utilisés :
+  - `GET /api/v2/links` — liste tous les liens du compte (retourne `_id` = `getMySocialLinkId`)
+  - `GET /api/v2/analytics/overview?scope=link&linkId={id}` — totalClicks, uniqueVisitors, top countries/devices/referrers
+  - `GET /api/v2/analytics/dimensions/countries?scope=link&linkId={id}` — breakdown pays complet (pour calculer le Tier 1 %)
+  - `GET /api/v2/analytics/time-series?scope=link&linkId={id}&interval=day` — clics par jour
+- Tier 1 = pays : US, UK, CA, AU, DE, FR (à calculer en % depuis les données countries)
+- Toutes les calls GMS se font côté serveur (API routes Next.js) — test de connexion disponible via `GET /api/admin/gms/test`
+
 ## Architecture de données
 
 ### Table `models`
