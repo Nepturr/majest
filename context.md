@@ -90,8 +90,23 @@ Un persona AI avec une apparence physique fixe définie par un LoRA.
 Champs : `name`, `avatar_url`, `persona`, `lora_id`, `lora_thumbnail_url`, `brand_notes`, `status` (active/inactive).
 
 ### Table `accounts`
-Un compte OnlyFans associé à une modèle.
-Champs clés : `model_id` (FK), `ofapi_account_id` (unique — ID OFAPI ex: `acct_XXXXXXXX`), `of_username`, `of_avatar_url`, `instagram_handle`, `niche`, `get_my_social_link_id` (GetMySocial API), `of_tracking_link` (tracking link OF).
+Lien entre un compte OnlyFans (OFAPI) et une modèle.
+Champs clés : `model_id` (FK), `ofapi_account_id` (unique — ID OFAPI ex: `acct_XXXXXXXX`), `of_username`, `of_avatar_url`.
+Contrainte : 1 compte OF = 1 seule modèle.
+
+### Table `instagram_accounts`
+Un compte Instagram géré par l'agence. Connecte tous les éléments du funnel.
+Champs clés :
+- `model_id` (FK → models) — modèle associée
+- `of_account_id` (FK → accounts) — compte OF lié (peut être partagé entre plusieurs comptes IG)
+- `instagram_handle` — username Instagram
+- `oneup_social_network_id` (unique) — ID du compte dans OneUp (pour le scheduling)
+- `oneup_social_network_name`, `oneup_category_id` — info OneUp stockée pour l'affichage
+- `get_my_social_link_id` (unique) — ID du lien bio GMS (1 lien = 1 compte IG max)
+- `get_my_social_link_name` — titre du lien GMS stocké pour l'affichage
+- `of_tracking_link_id` (unique) — ID du tracking link OFAPI (1 tracking link = 1 compte IG max)
+- `of_tracking_link_url` — URL du tracking link stockée pour l'affichage
+- `niche`, `status` (active/inactive)
 
 ### Sources de données du funnel
 - **GetMySocial** : clics bio → `GET /api/v2/analytics/overview?scope=link&linkId={getMySocialLinkId}`
@@ -99,6 +114,14 @@ Champs clés : `model_id` (FK), `ofapi_account_id` (unique — ID OFAPI ex: `acc
 - **Apify** : scraping Instagram Insights pour les stats de reels
 
 ## Historique des Mises à Jour
+
+### v0.3.0 — 25 Mars 2026
+- Feature "Accounts" : page complète pour gérer les comptes Instagram
+- Table `instagram_accounts` avec toutes les connexions funnel
+- Modal "Add/Edit Account" : picker OneUp (searchable), GMS links (searchable), OF account (par modèle), tracking link (par OF account)
+- Contraintes unicité : 1 OneUp account / 1 GMS link / 1 tracking link par compte Instagram
+- Routes API : CRUD `/api/admin/instagram-accounts`, proxy `/api/admin/oneup/social-accounts`, `/api/admin/gms/links`, `/api/admin/ofapi/tracking-links`
+- Accounts ajouté à la sidebar nav
 
 ### v0.2.2 — 25 Mars 2026
 - Intégration OneUp API : clé stockée dans `settings.oneup_api_key`, carte de config dans Admin → API

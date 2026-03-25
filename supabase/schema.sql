@@ -126,6 +126,40 @@ create trigger on_account_updated
 
 
 -- ============================================================
+-- INSTAGRAM ACCOUNTS TABLE
+-- Un compte Instagram géré par l'agence
+-- ============================================================
+
+create table if not exists public.instagram_accounts (
+  id                        uuid        default gen_random_uuid() primary key,
+  model_id                  uuid        references public.models(id) on delete cascade not null,
+  of_account_id             uuid        references public.accounts(id) on delete set null,
+  instagram_handle          text        not null,
+  oneup_social_network_id   text        unique,
+  oneup_social_network_name text,
+  oneup_category_id         text,
+  get_my_social_link_id     text        unique,
+  get_my_social_link_name   text,
+  of_tracking_link_id       text        unique,
+  of_tracking_link_url      text,
+  niche                     text,
+  status                    text        not null default 'active' check (status in ('active', 'inactive')),
+  created_at                timestamptz not null default now(),
+  updated_at                timestamptz not null default now()
+);
+
+alter table public.instagram_accounts enable row level security;
+
+create policy "Authenticated users can view instagram accounts"
+  on public.instagram_accounts for select
+  using (auth.uid() is not null);
+
+create trigger on_instagram_account_updated
+  before update on public.instagram_accounts
+  for each row execute procedure public.handle_updated_at();
+
+
+-- ============================================================
 -- SETTINGS TABLE
 -- Stockage clé-valeur pour les clés API et configs (service_role only)
 -- ============================================================

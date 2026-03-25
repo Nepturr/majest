@@ -84,6 +84,53 @@ export interface Account {
   updated_at: string;
 }
 
+export interface InstagramAccount {
+  id: string;
+  model_id: string;
+  of_account_id: string | null;
+  instagram_handle: string;
+  oneup_social_network_id: string | null;
+  oneup_social_network_name: string | null;
+  oneup_category_id: string | null;
+  get_my_social_link_id: string | null;
+  get_my_social_link_name: string | null;
+  of_tracking_link_id: string | null;
+  of_tracking_link_url: string | null;
+  niche: string | null;
+  status: "active" | "inactive";
+  created_at: string;
+  updated_at: string;
+  // Joined fields (from API)
+  model?: { name: string; avatar_url: string | null };
+  of_account?: { of_username: string | null; of_avatar_url: string | null };
+}
+
+/** A social account from the OneUp API (Instagram filtered) */
+export interface OneUpSocialAccount {
+  social_network_id: string;
+  social_network_name: string;
+  category_id: string;
+  category_name: string;
+  is_expired: boolean;
+  isAssigned: boolean;
+}
+
+/** A link from the GetMySocial API */
+export interface GMSLink {
+  id: string;          // _id from GMS
+  title: string;
+  url: string | null;
+  isAssigned: boolean;
+}
+
+/** A tracking link from the OnlyFansAPI */
+export interface OFTrackingLink {
+  id: string;
+  name: string;
+  url: string | null;
+  isAssigned: boolean;
+}
+
 /** A connected OnlyFans account from the OFAPI console */
 export interface OFApiAccount {
   id: string;          // e.g. "acct_XXXXXXXX"
