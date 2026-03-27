@@ -12,6 +12,38 @@ function cn(...classes: (string | boolean | undefined | null)[]) {
   return classes.filter(Boolean).join(" ");
 }
 
+const IPHONE_DIMENSIONS: Record<string, { width: number; height: number }> = {
+  "iPhone 16 Pro Max": { width: 440, height: 956 },
+  "iPhone 16 Pro":     { width: 402, height: 874 },
+  "iPhone 16 Plus":    { width: 430, height: 932 },
+  "iPhone 16":         { width: 393, height: 852 },
+  "iPhone 15 Pro Max": { width: 430, height: 932 },
+  "iPhone 15 Pro":     { width: 393, height: 852 },
+  "iPhone 15 Plus":    { width: 430, height: 932 },
+  "iPhone 15":         { width: 393, height: 852 },
+  "iPhone 14 Pro Max": { width: 430, height: 932 },
+  "iPhone 14 Pro":     { width: 393, height: 852 },
+  "iPhone 14 Plus":    { width: 428, height: 926 },
+  "iPhone 14":         { width: 390, height: 844 },
+  "iPhone 13 Pro Max": { width: 428, height: 926 },
+  "iPhone 13 Pro":     { width: 390, height: 844 },
+  "iPhone 13":         { width: 390, height: 844 },
+  "iPhone 13 mini":    { width: 375, height: 812 },
+  "iPhone 12 Pro Max": { width: 428, height: 926 },
+  "iPhone 12 Pro":     { width: 390, height: 844 },
+  "iPhone 12":         { width: 390, height: 844 },
+  "iPhone 12 mini":    { width: 375, height: 812 },
+  "iPhone 11 Pro Max": { width: 414, height: 896 },
+  "iPhone 11 Pro":     { width: 375, height: 812 },
+  "iPhone 11":         { width: 414, height: 896 },
+  "iPhone XS Max":     { width: 414, height: 896 },
+  "iPhone XS":         { width: 375, height: 812 },
+  "iPhone XR":         { width: 414, height: 896 },
+  "iPhone X":          { width: 375, height: 812 },
+  "iPhone SE (3ème gen)": { width: 375, height: 667 },
+  "iPhone SE (2ème gen)": { width: 375, height: 667 },
+};
+
 const GROUP_COLORS = [
   "#6366f1", "#8b5cf6", "#ec4899", "#f43f5e", "#ef4444",
   "#f97316", "#eab308", "#22c55e", "#14b8a6", "#06b6d4",
@@ -139,8 +171,8 @@ function DevicesTab() {
               <tr className="border-b border-border bg-background/50">
                 <th className="text-left text-xs font-medium text-muted-foreground px-4 py-2.5">Label</th>
                 <th className="text-left text-xs font-medium text-muted-foreground px-4 py-2.5">MAC Address</th>
+                <th className="text-left text-xs font-medium text-muted-foreground px-4 py-2.5">Model</th>
                 <th className="text-left text-xs font-medium text-muted-foreground px-4 py-2.5">Group</th>
-                <th className="text-left text-xs font-medium text-muted-foreground px-4 py-2.5">Screen</th>
                 <th className="text-left text-xs font-medium text-muted-foreground px-4 py-2.5">Status</th>
                 <th className="px-4 py-2.5" />
               </tr>
@@ -152,6 +184,9 @@ function DevicesTab() {
                   <tr key={phone.id} className="hover:bg-background/40 transition-colors">
                     <td className="px-4 py-3 font-medium">{phone.label}</td>
                     <td className="px-4 py-3 font-mono text-xs text-muted-foreground">{phone.device_id}</td>
+                    <td className="px-4 py-3 text-xs text-muted-foreground">
+                      {phone.model ?? <span className="text-muted-foreground/40">—</span>}
+                    </td>
                     <td className="px-4 py-3">
                       {grp ? (
                         <span className="inline-flex items-center gap-1.5 text-xs font-medium px-2 py-0.5 rounded-full" style={{ backgroundColor: `${grp.color}20`, color: grp.color }}>
@@ -159,9 +194,6 @@ function DevicesTab() {
                           {grp.name}
                         </span>
                       ) : <span className="text-muted-foreground text-xs">—</span>}
-                    </td>
-                    <td className="px-4 py-3 text-xs text-muted-foreground">
-                      {phone.width && phone.height ? `${phone.width}×${phone.height}` : "—"}
                     </td>
                     <td className="px-4 py-3">
                       <span className={cn(
@@ -214,8 +246,6 @@ function PhoneFormModal({ phone, groups, onClose, onSuccess }: {
   const [deviceId, setDeviceId] = useState(phone?.device_id ?? "");
   const [groupId, setGroupId] = useState(phone?.group_id ?? "");
   const [status, setStatus] = useState<"active" | "inactive">(phone?.status ?? "active");
-  const [width, setWidth] = useState(phone?.width?.toString() ?? "");
-  const [height, setHeight] = useState(phone?.height?.toString() ?? "");
   const [model, setModel] = useState(phone?.model ?? "");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -224,14 +254,15 @@ function PhoneFormModal({ phone, groups, onClose, onSuccess }: {
     e.preventDefault();
     setError("");
     setSaving(true);
+    const dims = model ? IPHONE_DIMENSIONS[model] ?? null : null;
     const payload = {
       label: label.trim(),
       device_id: deviceId.trim().toUpperCase(),
       group_id: groupId || null,
       status,
-      width: width ? parseInt(width) : null,
-      height: height ? parseInt(height) : null,
-      model: model.trim() || null,
+      width: dims?.width ?? null,
+      height: dims?.height ?? null,
+      model: model || null,
     };
     const url = isEdit ? `/api/admin/phones/${phone!.id}` : "/api/admin/phones";
     const res = await fetch(url, { method: isEdit ? "PATCH" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
@@ -262,16 +293,18 @@ function PhoneFormModal({ phone, groups, onClose, onSuccess }: {
             </select>
           </FormField>
           <FormField label="Model">
-            <input value={model} onChange={(e) => setModel(e.target.value)} placeholder="iPhone 14 Pro" className={inputCls} />
+            <select value={model} onChange={(e) => setModel(e.target.value)} className={inputCls}>
+              <option value="">Select a model…</option>
+              {Object.keys(IPHONE_DIMENSIONS).map((m) => (
+                <option key={m} value={m}>{m}</option>
+              ))}
+            </select>
+            {model && IPHONE_DIMENSIONS[model] && (
+              <p className="text-[11px] text-muted-foreground mt-1">
+                {IPHONE_DIMENSIONS[model].width} × {IPHONE_DIMENSIONS[model].height} px
+              </p>
+            )}
           </FormField>
-          <div className="grid grid-cols-2 gap-3">
-            <FormField label="Screen Width">
-              <input type="number" value={width} onChange={(e) => setWidth(e.target.value)} placeholder="390" className={inputCls} />
-            </FormField>
-            <FormField label="Screen Height">
-              <input type="number" value={height} onChange={(e) => setHeight(e.target.value)} placeholder="844" className={inputCls} />
-            </FormField>
-          </div>
           <FormField label="Status">
             <div className="grid grid-cols-2 gap-2">
               {(["active", "inactive"] as const).map((s) => (
