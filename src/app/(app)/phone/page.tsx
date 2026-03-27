@@ -62,8 +62,8 @@ export default function PhonePage() {
   return (
     <ProtectedPage pageId="phone">
       <div className="flex flex-col h-full min-h-0">
-        <Header
-          title="Phone"
+          <Header
+          title="Phones"
           subtitle={`${phones.length} device${phones.length !== 1 ? "s" : ""} accessible`}
         />
 
