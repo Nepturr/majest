@@ -3,6 +3,7 @@ import {
   Film,
   TrendingUp,
   AtSign,
+  Smartphone,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
@@ -18,4 +19,5 @@ export const ALL_PAGES: PageConfig[] = [
   { id: "accounts", label: "Accounts", href: "/accounts", icon: AtSign },
   { id: "instagram", label: "Instagram Reels", href: "/instagram", icon: Film },
   { id: "performance", label: "Performance", href: "/performance", icon: TrendingUp },
+  { id: "phone", label: "Phone", href: "/phone", icon: Smartphone },
 ];

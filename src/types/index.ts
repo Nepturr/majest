@@ -89,9 +89,6 @@ export interface InstagramAccount {
   model_id: string;
   of_account_id: string | null;
   instagram_handle: string;
-  oneup_social_network_id: string | null;
-  oneup_social_network_name: string | null;
-  oneup_category_id: string | null;
   get_my_social_link_id: string | null;
   get_my_social_link_name: string | null;
   of_tracking_link_id: string | null;
@@ -110,16 +107,6 @@ export interface InstagramAccount {
     profile_pic_url: string | null;
     collected_at: string;
   } | null;
-}
-
-/** A social account from the OneUp API (Instagram filtered) */
-export interface OneUpSocialAccount {
-  social_network_id: string;
-  social_network_name: string;
-  category_id: string;
-  category_name: string;
-  is_expired: boolean;
-  isAssigned: boolean;
 }
 
 /** A link from the GetMySocial API */

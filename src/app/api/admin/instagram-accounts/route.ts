@@ -72,9 +72,6 @@ export async function POST(req: NextRequest) {
     model_id,
     of_account_id,
     instagram_handle,
-    oneup_social_network_id,
-    oneup_social_network_name,
-    oneup_category_id,
     get_my_social_link_id,
     get_my_social_link_name,
     of_tracking_link_id,
@@ -112,9 +109,6 @@ export async function POST(req: NextRequest) {
       model_id,
       of_account_id: of_account_id || null,
       instagram_handle: instagram_handle.trim(),
-      oneup_social_network_id: oneup_social_network_id || null,
-      oneup_social_network_name: oneup_social_network_name || null,
-      oneup_category_id: oneup_category_id || null,
       get_my_social_link_id: get_my_social_link_id || null,
       get_my_social_link_name: get_my_social_link_name || null,
       of_tracking_link_id: of_tracking_link_id || null,
@@ -127,8 +121,6 @@ export async function POST(req: NextRequest) {
 
   if (error) {
     if (error.code === "23505") {
-      if (error.message.includes("oneup_social_network_id"))
-        return NextResponse.json({ error: "This OneUp account is already assigned." }, { status: 409 });
       if (error.message.includes("get_my_social_link_id"))
         return NextResponse.json({ error: "This GetMySocial link is already assigned." }, { status: 409 });
       if (error.message.includes("of_tracking_link_id"))

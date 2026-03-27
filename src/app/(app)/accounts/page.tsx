@@ -11,7 +11,6 @@ import type {
   InstagramPost,
   Model,
   Account,
-  OneUpSocialAccount,
   GMSLink,
   OFTrackingLink,
 } from "@/types";
@@ -577,27 +576,24 @@ interface AccountModalProps {
 function AccountModal({ account, onClose, onSuccess }: AccountModalProps) {
   const isEdit = !!account;
 
+  const [instagramHandle, setInstagramHandle] = useState(account?.instagram_handle ?? "");
   const [niche, setNiche] = useState(account?.niche ?? "");
   const [status, setStatus] = useState<"active" | "inactive">(account?.status ?? "active");
 
   const [selectedModel, setSelectedModel] = useState<Model | null>(null);
-  const [selectedOneUp, setSelectedOneUp] = useState<OneUpSocialAccount | null>(null);
   const [selectedGMS, setSelectedGMS] = useState<GMSLink | null>(null);
   const [selectedOFAccount, setSelectedOFAccount] = useState<Account | null>(null);
   const [selectedTracking, setSelectedTracking] = useState<OFTrackingLink | null>(null);
 
   const [models, setModels] = useState<Model[]>([]);
-  const [oneupAccounts, setOneupAccounts] = useState<OneUpSocialAccount[]>([]);
   const [gmsLinks, setGmsLinks] = useState<GMSLink[]>([]);
   const [ofAccounts, setOfAccounts] = useState<Account[]>([]);
   const [trackingLinks, setTrackingLinks] = useState<OFTrackingLink[]>([]);
 
   const [loadingModels, setLoadingModels] = useState(true);
-  const [loadingOneup, setLoadingOneup] = useState(true);
   const [loadingGMS, setLoadingGMS] = useState(true);
   const [loadingOFAccounts, setLoadingOFAccounts] = useState(false);
   const [loadingTracking, setLoadingTracking] = useState(false);
-  const [errorOneup, setErrorOneup] = useState<string | null>(null);
   const [errorGMS, setErrorGMS] = useState<string | null>(null);
   const [errorTracking, setErrorTracking] = useState<string | null>(null);
 
@@ -607,14 +603,10 @@ function AccountModal({ account, onClose, onSuccess }: AccountModalProps) {
   useEffect(() => {
     Promise.all([
       fetch("/api/admin/models").then((r) => r.json()),
-      fetch("/api/admin/oneup/social-accounts").then((r) => r.json()),
       fetch("/api/admin/gms/links").then((r) => r.json()),
-    ]).then(([modelsData, oneupData, gmsData]) => {
+    ]).then(([modelsData, gmsData]) => {
       setModels(modelsData.models ?? []);
       setLoadingModels(false);
-      if (oneupData.error) setErrorOneup(oneupData.error);
-      else setOneupAccounts(oneupData.accounts ?? []);
-      setLoadingOneup(false);
       if (gmsData.error) setErrorGMS(gmsData.error);
       else setGmsLinks(gmsData.links ?? []);
       setLoadingGMS(false);
@@ -625,26 +617,13 @@ function AccountModal({ account, onClose, onSuccess }: AccountModalProps) {
     if (!account || models.length === 0) return;
     const m = models.find((m) => m.id === account.model_id) ?? null;
     setSelectedModel(m);
-    if (account.oneup_social_network_id) {
-      const ou = oneupAccounts.find((a) => a.social_network_id === account.oneup_social_network_id) ?? null;
-      if (!ou) {
-        setSelectedOneUp({
-          social_network_id: account.oneup_social_network_id,
-          social_network_name: account.oneup_social_network_name ?? account.oneup_social_network_id,
-          category_id: account.oneup_category_id ?? "",
-          category_name: "",
-          is_expired: false,
-          isAssigned: true,
-        });
-      } else setSelectedOneUp(ou);
-    }
     if (account.get_my_social_link_id) {
       const g = gmsLinks.find((l) => l.id === account.get_my_social_link_id) ?? null;
       if (!g) {
         setSelectedGMS({ id: account.get_my_social_link_id, title: account.get_my_social_link_name ?? account.get_my_social_link_id, url: null, isAssigned: true });
       } else setSelectedGMS(g);
     }
-  }, [account, models, oneupAccounts, gmsLinks]);
+  }, [account, models, gmsLinks]);
 
   useEffect(() => {
     if (!selectedModel) { setOfAccounts([]); setSelectedOFAccount(null); return; }
@@ -683,19 +662,16 @@ function AccountModal({ account, onClose, onSuccess }: AccountModalProps) {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError("");
-    if (!selectedOneUp) { setFormError("Please select an Instagram account from OneUp."); return; }
+    const handle = instagramHandle.trim().replace(/^@/, "");
+    if (!handle) { setFormError("Please enter an Instagram username."); return; }
     if (!selectedModel) { setFormError("Please select a model."); return; }
 
-    const derivedHandle = selectedOneUp.social_network_name.replace(/^@/, "");
     setSaving(true);
 
     const payload = {
       model_id: selectedModel.id,
       of_account_id: selectedOFAccount?.id ?? null,
-      instagram_handle: derivedHandle,
-      oneup_social_network_id: selectedOneUp?.social_network_id ?? null,
-      oneup_social_network_name: selectedOneUp?.social_network_name ?? null,
-      oneup_category_id: selectedOneUp?.category_id ?? null,
+      instagram_handle: handle,
       get_my_social_link_id: selectedGMS?.id ?? null,
       get_my_social_link_name: selectedGMS?.title ?? null,
       of_tracking_link_id: selectedTracking?.id ?? null,
@@ -742,26 +718,18 @@ function AccountModal({ account, onClose, onSuccess }: AccountModalProps) {
 
             <div>
               <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1">Instagram Account</p>
-              <p className="text-xs text-muted-foreground mb-3">Select an account from OneUp — only unlinked accounts are shown.</p>
-              <SearchableSelect<OneUpSocialAccount>
-                label="Instagram account *"
-                placeholder="Pick an account from OneUp…"
-                items={oneupAccounts}
-                value={selectedOneUp}
-                onSelect={setSelectedOneUp}
-                getKey={(a) => a.social_network_id}
-                getLabel={(a) => `@${a.social_network_name}`}
-                getSubLabel={(a) => a.category_name || null}
-                isDisabled={(a) => a.isAssigned && a.social_network_id !== account?.oneup_social_network_id}
-                loading={loadingOneup}
-                error={errorOneup}
-              />
-              {selectedOneUp && (
-                <p className="mt-2 text-xs text-muted-foreground">
-                  Handle: <span className="font-mono text-foreground">@{selectedOneUp.social_network_name}</span>
-                  {selectedOneUp.category_name && <>{" · "}<span className="text-foreground">{selectedOneUp.category_name}</span></>}
-                </p>
-              )}
+              <p className="text-xs text-muted-foreground mb-3">Enter the Instagram username to track.</p>
+              <label className="block text-xs font-medium text-muted-foreground mb-1.5">Username *</label>
+              <div className="relative">
+                <AtSign className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+                <input
+                  type="text"
+                  value={instagramHandle}
+                  onChange={(e) => setInstagramHandle(e.target.value)}
+                  placeholder="username"
+                  className="w-full h-10 pl-9 pr-3 bg-background border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent/50 transition-all placeholder:text-muted-foreground"
+                />
+              </div>
             </div>
 
             <hr className="border-border" />

@@ -63,9 +63,6 @@ Champs clés :
 - `id`, `status` (active/inactive), `niche`, `instagram_handle`
 - `model_id` (FK → models) — modèle associée
 - `of_account_id` (FK → accounts, nullable) — compte OF lié. **1 compte OF peut être lié à plusieurs comptes IG** (pas de contrainte unique ici)
-- `oneup_social_network_id` (unique) — `social_account_id` retourné par `listsocialaccounts` OneUp. Identifie le compte dans OneUp pour le scheduling.
-- `oneup_social_network_name` — username Instagram (`bh.suki`)
-- `oneup_category_id` — stocké pour scheduling futur (peut être vide si compte non catégorisé)
 - `get_my_social_link_id` (unique) — `_id` du lien bio GetMySocial. **1 lien GMS = 1 compte IG max**
 - `get_my_social_link_name` — `displayName` du lien GMS (ex: `"@bh.suki"`)
 - `of_tracking_link_id` (unique) — `id` (numérique, stringifié) du tracking link OFAPI. **1 tracking link = 1 compte IG max**
@@ -73,7 +70,7 @@ Champs clés :
 
 ### Table `settings`
 Stockage clé-valeur pour les clés API. Accessible uniquement via service_role (aucune RLS publique).
-Clés utilisées : `gms_api_key`, `ofapi_api_key`, `oneup_api_key`, `apify_api_key`.
+Clés utilisées : `gms_api_key`, `ofapi_api_key`, `apify_api_key`.
 
 ### Table `instagram_account_snapshots`
 Snapshot des métriques d'un compte Instagram à chaque collecte Apify. Permet de tracer l'évolution dans le temps.
@@ -112,22 +109,6 @@ Index : `(post_id, collected_at DESC)`.
   - Profil : `followersCount`, `followsCount`, `postsCount`, `biography`, `verified`, `profilePicUrlHD`
   - Posts (depuis `latestPosts[]`) : `shortCode`, `type`, `url`, `caption`, `displayUrl`, `timestamp`, `likesCount`, `commentsCount`, `videoViewCount`, `videoPlayCount`
 
-### OneUp (oneupapp.io)
-- Base URL : `https://www.oneupapp.io/api`
-- Auth : query param `?apiKey={oneup_api_key}` (stockée dans `settings.oneup_api_key`)
-- Usage : scheduling de posts Instagram (Reels, images, stories)
-- **Endpoints utilisés dans Majest :**
-  - `GET /api/listcategory?apiKey=...` — liste les catégories (test de connexion → `GET /api/admin/oneup/test`)
-  - `GET /api/listsocialaccounts?apiKey=...` — liste TOUS les comptes connectés. Retourne : `{ username, social_account_id, full_name, is_expired, social_network_type, need_refresh }`. **C'est `social_account_id` qui est stocké comme `oneup_social_network_id`** (pas `social_network_id` de `listcategoryaccount`). Filtré sur `social_network_type === "instagram"` (casse insensible).
-  - `GET /api/listcategoryaccount?apiKey=...&category_id=ID` — retourne les comptes d'une catégorie avec `social_network_id` (utile pour le scheduling futur)
-  - `POST /api/schedulevideopost` — schedule un Reel. Params : `category_id`, `social_network_id` (JSON array ou `"ALL"`), `scheduled_date_time` (YYYY-MM-DD HH:MM), `content`, `video_url`. Instagram : `instagram={"isTrialReel":1|2}`
-  - `POST /api/scheduleimagepost` — schedule un post image. Param : `image_url` (plusieurs séparées par `~~`). Instagram : `instagram={"isStory":true}`
-  - `GET /api/getscheduledposts?apiKey=...&start=0` — posts programmés (50/page)
-  - `GET /api/getpublishedposts?apiKey=...&start=0` — historique publiés
-  - `GET /api/getfailedposts?apiKey=...&start=0` — posts en échec
-- Response générale : `{ message: string, error: boolean, data: [...] }`
-- **Note** : OneUp = scheduling uniquement. Stats de performance des Reels → Apify (scraping Instagram Insights).
-
 ### OnlyFansAPI (onlyfansapi.com)
 - Base URL : `https://app.onlyfansapi.com/api`
 - Auth : header `Authorization: Bearer {ofapi_api_key}` (stockée dans `settings.ofapi_api_key`)
@@ -158,13 +139,12 @@ Index : `(post_id, collected_at DESC)`.
 ## Routes API internes (Next.js)
 
 ### Admin — Clés API (`/api/admin/settings`)
-- `GET ?keys=gms_api_key,ofapi_api_key,oneup_api_key` — récupère les valeurs (service_role)
+- `GET ?keys=gms_api_key,ofapi_api_key,apify_api_key` — récupère les valeurs (service_role)
 - `POST { key, value }` — upsert une clé
 
 ### Admin — Test de connexion
 - `GET /api/admin/gms/test` — teste la clé GMS (appelle `/api/v2/links?limit=1`)
 - `GET /api/admin/ofapi/test` — teste la clé OFAPI (appelle `/api/client-sessions`)
-- `GET /api/admin/oneup/test` — teste la clé OneUp (appelle `/api/listcategory`)
 - `GET /api/admin/apify/test` — teste la clé Apify (appelle `/v2/users/me`). Retourne `{ ok, username, plan }`
 
 ### Admin — Models (`/api/admin/models`)
@@ -180,10 +160,10 @@ Index : `(post_id, collected_at DESC)`.
 
 ### Admin — Comptes Instagram (`/api/admin/instagram-accounts`)
 - `GET` — liste tous les comptes Instagram avec joins (`model`, `of_account`)
-- `POST { model_id, of_account_id, instagram_handle, oneup_social_network_id, oneup_social_network_name, oneup_category_id, get_my_social_link_id, get_my_social_link_name, of_tracking_link_id, of_tracking_link_url, niche, status }` — crée un compte
+- `POST { model_id, of_account_id, instagram_handle, get_my_social_link_id, get_my_social_link_name, of_tracking_link_id, of_tracking_link_url, niche, status }` — crée un compte. `instagram_handle` est saisi manuellement (sans `@`).
 - `PATCH /[id]` — met à jour
 - `DELETE /[id]` — supprime
-- Unicité DB : `oneup_social_network_id`, `get_my_social_link_id`, `of_tracking_link_id`
+- Unicité DB : `get_my_social_link_id`, `of_tracking_link_id`
 
 ### Instagram Analytics (`/api/instagram/[id]/`)
 - `POST /api/instagram/[id]/collect` — lance un run Apify asynchrone pour le compte IG `id`. Retourne `{ runId, status, datasetId }`.
@@ -192,11 +172,10 @@ Index : `(post_id, collected_at DESC)`.
 - `GET /api/instagram/[id]/posts?limit=30&type=Video` — liste les posts avec le dernier snapshot de métriques joint.
 
 ### Proxies API externes
-- `GET /api/admin/oneup/social-accounts` — retourne les comptes Instagram OneUp (via `listsocialaccounts`, filtre `social_network_type = instagram`), avec flag `isAssigned`
 - `GET /api/admin/gms/links` — retourne tous les liens GMS paginés, avec flag `isAssigned`
 - `GET /api/admin/ofapi/accounts` — retourne les comptes OF depuis OFAPI, enrichis avec `isAssigned` et `assignedToModelName`
 - `GET /api/admin/ofapi/tracking-links?account_id=acct_XXX` — retourne tous les tracking links d'un compte OF (pagination complète via `hasMore`/`next_page`), avec flag `isAssigned`
-- `GET /api/admin/debug` — route de debug : retourne les réponses brutes OneUp + GMS pour inspecter la structure des champs
+- `GET /api/admin/debug` — route de debug : retourne les réponses brutes GMS pour inspecter la structure des champs
 
 ---
 
@@ -208,6 +187,7 @@ Index : `(post_id, collected_at DESC)`.
 | Accounts | `/accounts` | Tous | Gestion comptes Instagram |
 | Instagram Reels | `/instagram` | Tous | Analyser des Reels |
 | Performance | `/performance` | Tous | Métriques de performance |
+| Phone | `/phone` | Tous | Contrôle à distance de la ferme de téléphones (post & interactions) |
 | Admin | `/admin` | Admin seulement | Users, Models, API keys |
 
 La sidebar affiche uniquement les pages autorisées pour l'utilisateur connecté (`allowed_pages` dans `profiles`). Les admins voient tout. La page Models n'est **pas** dans la sidebar — accessible uniquement via Admin panel.
@@ -229,9 +209,10 @@ Abonnement OnlyFans        ← subscribers + revenue via OFAPI
 ```
 
 Chaque compte Instagram (`instagram_accounts`) connecte :
-1. Un compte OneUp → pour scheduler le contenu
-2. Un lien GMS → pour mesurer les clics bio (qualité audience, Tier 1 %)
-3. Un tracking link OFAPI → pour mesurer conversions & revenue
+1. Un lien GMS → pour mesurer les clics bio (qualité audience, Tier 1 %)
+2. Un tracking link OFAPI → pour mesurer conversions & revenue
+
+Le posting/scheduling se fait depuis la page **Phone** (ferme de téléphones en remote, connexion à définir).
 
 ---
 
@@ -246,15 +227,26 @@ Chaque compte Instagram (`instagram_accounts`) connecte :
 ### 3. Admin Panel (v0.2+)
 - Onglet **Users** : créer/gérer les utilisateurs et leurs permissions
 - Onglet **Models** : CRUD modèles, upload avatar + LoRA, liaison comptes OF (stacked avatars)
-- Onglet **API** : configurer et tester les clés GMS, OnlyFansAPI, OneUp
+- Onglet **API** : configurer et tester les clés GMS, OnlyFansAPI, Apify
 
 ### 4. Accounts (v0.3)
 - Page complète de gestion des comptes Instagram
-- Modal "Add/Edit Account" avec pickers searchables pour OneUp, GMS, modèle, OF account, tracking link
+- Modal "Add/Edit Account" : saisie manuelle de l'`instagram_handle`, pickers searchables pour GMS, modèle, OF account, tracking link
+
+### 5. Phone (v0.6 — en cours)
+- Page dédiée au contrôle à distance de la ferme de téléphones
+- Permet de poster et d'interagir sur Instagram directement depuis le site
+- Connexion à la ferme à définir (API custom fournie par l'utilisateur)
 
 ---
 
 ## Historique des Mises à Jour
+
+### v0.6.0 — 27 Mars 2026
+- Suppression complète de OneUp : routes `/api/admin/oneup/*`, carte API Key dans Admin, types TypeScript, colonnes DB (`oneup_social_network_id`, `oneup_social_network_name`, `oneup_category_id`), clé `oneup_api_key` dans settings
+- Migration SQL `010_remove_oneup.sql` pour nettoyer la base
+- Modal "Add Account" : le handle Instagram est désormais saisi manuellement (`@username`) au lieu d'être dérivé de OneUp
+- Nouvelle page **Phone** (`/phone`) dans la sidebar : page dédiée au contrôle de la ferme de téléphones en remote (placeholder, connexion API à venir)
 
 ### v0.5.0 — 25 Mars 2026
 - Page Performance construite avec données réelles — funnel complet par compte (pas de mock)

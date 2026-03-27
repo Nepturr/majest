@@ -35,8 +35,6 @@ export async function PATCH(
 
   if (error) {
     if (error.code === "23505") {
-      if (error.message.includes("oneup_social_network_id"))
-        return NextResponse.json({ error: "This OneUp account is already assigned." }, { status: 409 });
       if (error.message.includes("get_my_social_link_id"))
         return NextResponse.json({ error: "This GetMySocial link is already assigned." }, { status: 409 });
       if (error.message.includes("of_tracking_link_id"))
