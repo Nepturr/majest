@@ -10,14 +10,16 @@ import {
   Plus, Pencil, Trash2, Shield, User, Copy, Check,
   X, Loader2, AlertCircle, Users, Plug, Sparkles,
   ImageOff, Upload, FileBox, Key, CheckCircle2, RefreshCw,
-  Link, UserPlus, Unlink, ChevronRight,
+  Link, UserPlus, Unlink, ChevronRight, Smartphone,
 } from "lucide-react";
+import { PhoneConfigContent } from "@/components/phone-config";
 
 /* ─── Tab config ─── */
 const TABS = [
   { id: "users", label: "Users", icon: Users },
   { id: "models", label: "Models", icon: Sparkles },
   { id: "api", label: "API", icon: Plug },
+  { id: "phones", label: "Phones", icon: Smartphone },
 ] as const;
 type TabId = (typeof TABS)[number]["id"];
 
@@ -62,11 +64,18 @@ export default function AdminPage() {
         </div>
       </div>
 
-      <div className="p-6">
-        {activeTab === "users" && <UsersTab />}
-        {activeTab === "models" && <ModelsTab />}
-        {activeTab === "api" && <ApiTab />}
-      </div>
+      {activeTab !== "phones" && (
+        <div className="p-6">
+          {activeTab === "users" && <UsersTab />}
+          {activeTab === "models" && <ModelsTab />}
+          {activeTab === "api" && <ApiTab />}
+        </div>
+      )}
+      {activeTab === "phones" && (
+        <div className="flex flex-col" style={{ height: "calc(100vh - 130px)" }}>
+          <PhoneConfigContent />
+        </div>
+      )}
     </>
   );
 }

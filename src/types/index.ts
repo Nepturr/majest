@@ -109,6 +109,46 @@ export interface InstagramAccount {
   } | null;
 }
 
+// ── Phone Farm ─────────────────────────────────────────────────
+
+export interface PhoneGroup {
+  id: string;
+  name: string;
+  color: string;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+  phone_count?: number;
+}
+
+export interface Phone {
+  id: string;
+  device_id: string;         // MAC address (iMouseXP "id" field)
+  label: string;
+  group_id: string | null;
+  status: "active" | "inactive";
+  sort_order: number;
+  width: number | null;      // phone logical screen width
+  height: number | null;     // phone logical screen height
+  model: string | null;
+  created_at: string;
+  updated_at: string;
+  group?: PhoneGroup | null;
+}
+
+export interface PhoneAccess {
+  id: string;
+  user_id: string;
+  phone_id: string | null;
+  group_id: string | null;
+  created_at: string;
+  phone?: Pick<Phone, "id" | "label" | "device_id"> | null;
+  group?: Pick<PhoneGroup, "id" | "name" | "color"> | null;
+  profile?: { id: string; full_name: string | null; email: string } | null;
+}
+
+// ── GetMySocial ─────────────────────────────────────────────────
+
 /** A link from the GetMySocial API */
 export interface GMSLink {
   id: string;          // _id from GMS

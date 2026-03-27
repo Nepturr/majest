@@ -70,7 +70,21 @@ Champs clés :
 
 ### Table `settings`
 Stockage clé-valeur pour les clés API. Accessible uniquement via service_role (aucune RLS publique).
-Clés utilisées : `gms_api_key`, `ofapi_api_key`, `apify_api_key`.
+Clés utilisées : `gms_api_key`, `ofapi_api_key`, `apify_api_key`, `mini_pc_ip` (IP du Mini PC pour la ferme iPhone).
+
+### Table `phone_groups`
+Groupes logiques de téléphones créés dans Majest. Champs : `id`, `name`, `color` (hex), `sort_order`, `created_at`, `updated_at`.
+
+### Table `phones`
+iPhones enregistrés dans Majest, identifiés par adresse MAC (= `device_id` dans l'API iMouseXP).
+Champs : `id`, `device_id` (MAC unique), `label`, `group_id` (FK → phone_groups), `status` (active/inactive), `sort_order`, `width`, `height` (résolution écran logique), `model`, `created_at`, `updated_at`.
+
+### Table `phone_access`
+Permissions d'accès utilisateur → téléphone ou groupe.
+Champs : `id`, `user_id` (FK → profiles), `phone_id` (FK → phones, nullable), `group_id` (FK → phone_groups, nullable), `created_at`.
+Contrainte : exactement un de `phone_id`/`group_id` est non-null.
+Index partiels uniques : `(user_id, phone_id)` et `(user_id, group_id)` (WHERE NOT NULL).
+Les admins ont accès à tout (pas d'entrées nécessaires).
 
 ### Table `instagram_account_snapshots`
 Snapshot des métriques d'un compte Instagram à chaque collecte Apify. Permet de tracer l'évolution dans le temps.
@@ -139,8 +153,26 @@ Index : `(post_id, collected_at DESC)`.
 ## Routes API internes (Next.js)
 
 ### Admin — Clés API (`/api/admin/settings`)
-- `GET ?keys=gms_api_key,ofapi_api_key,apify_api_key` — récupère les valeurs (service_role)
+- `GET ?keys=gms_api_key,ofapi_api_key,apify_api_key,mini_pc_ip` — récupère les valeurs (service_role)
 - `POST { key, value }` — upsert une clé
+
+### Admin — Phone Farm
+- `GET /api/admin/phones` — liste tous les téléphones avec join groupe
+- `POST /api/admin/phones` — créé un téléphone `{ device_id, label, group_id?, status?, width?, height?, model? }`
+- `PATCH /api/admin/phones/[id]` — met à jour
+- `DELETE /api/admin/phones/[id]` — supprime
+- `GET /api/admin/phone-groups` — liste les groupes enrichis avec `phone_count`
+- `POST /api/admin/phone-groups` — `{ name, color? }`
+- `PATCH /api/admin/phone-groups/[id]` — met à jour; `DELETE` supprime (unassigne les phones du groupe)
+- `GET /api/admin/phone-access` — liste toutes les permissions avec joins (user, phone/group)
+- `POST /api/admin/phone-access` — `{ user_id, phone_id }` ou `{ user_id, group_id }` — accorde l'accès
+- `DELETE /api/admin/phone-access/[id]` — révoque l'accès
+
+### Phone Proxy (utilisateurs authentifiés avec accès)
+- `GET /api/phone/devices` — téléphones accessibles à l'utilisateur courant (admins = tous, users = selon phone_access)
+- `POST /api/phone/screenshot { phoneId }` — capture d'écran iMouseXP → retourne `{ img: base64, online: bool }`
+- `POST /api/phone/action { phoneId, type, ...params }` — types: `click {x,y}`, `swipe {direction}` ou `{sx,sy,ex,ey}`, `type {text}`, `hotkey {key}`
+- `POST /api/phone/farm-test { ip }` — test de connexion iMouseXP (admin)
 
 ### Admin — Test de connexion
 - `GET /api/admin/gms/test` — teste la clé GMS (appelle `/api/v2/links?limit=1`)
@@ -228,19 +260,35 @@ Le posting/scheduling se fait depuis la page **Phone** (ferme de téléphones en
 - Onglet **Users** : créer/gérer les utilisateurs et leurs permissions
 - Onglet **Models** : CRUD modèles, upload avatar + LoRA, liaison comptes OF (stacked avatars)
 - Onglet **API** : configurer et tester les clés GMS, OnlyFansAPI, Apify
+- Onglet **Phones** : gestion complète de la ferme — Devices (CRUD), Groups (CRUD), Access (permissions utilisateurs), Connection (IP Mini PC + test)
 
 ### 4. Accounts (v0.3)
 - Page complète de gestion des comptes Instagram
 - Modal "Add/Edit Account" : saisie manuelle de l'`instagram_handle`, pickers searchables pour GMS, modèle, OF account, tracking link
 
-### 5. Phone (v0.6 — en cours)
-- Page dédiée au contrôle à distance de la ferme de téléphones
-- Permet de poster et d'interagir sur Instagram directement depuis le site
-- Connexion à la ferme à définir (API custom fournie par l'utilisateur)
+### 5. Phone (v0.7)
+- Page dédiée au contrôle à distance de la ferme iPhone (iMouseXP API, port 9911)
+- **Hardware** : chips OTG Some3C branchés USB au Mini PC Windows (NiPoGi H1), iPhones identifiés par MAC
+- **Grid** : cartes par téléphone avec screenshot live (polling 6s), statut online/offline, groupes colorés
+- **Control drawer** : screenshot interactif (clic = tap sur l'iPhone), swipe directionnel, raccourcis iOS (Home, Back, Lock, Screenshot, Reboot...), envoi de texte
+- **Config (admin only, gear icon)** : modal avec 4 onglets (Devices, Groups, Access, Connection)
+- **Permissions** : admins voient tout; VAs voient uniquement les téléphones/groupes qui leur sont assignés (`phone_access`)
+- Également accessible depuis Admin → onglet **Phones**
 
 ---
 
 ## Historique des Mises à Jour
+
+### v0.7.0 — 27 Mars 2026
+- **Intégration iPhone Farm iMouseXP** — contrôle à distance de téléphones via l'API iMouseXP (HTTP POST port 9911)
+- **DB** : 3 nouvelles tables — `phones`, `phone_groups`, `phone_access` (migration `011_phone_farm.sql`); clé `mini_pc_ip` dans settings
+- **Système de permissions avancé** : accès par téléphone individuel ou par groupe; admins voient tout; VAs n'accèdent qu'aux téléphones assignés
+- **API admin** : CRUD complet `/api/admin/phones`, `/api/admin/phone-groups`, `/api/admin/phone-access`
+- **Proxy iMouseXP** : `/api/phone/screenshot`, `/api/phone/action` (click/swipe/type/hotkey), `/api/phone/devices`, `/api/phone/farm-test`
+- **XP Client** : `src/lib/phone/xp-client.ts` — wrapper type-safe pour l'API iMouseXP
+- **Page Phone** : grid de cartes avec screenshots auto-refresh (6s), statuts online/offline, groupes colorés, control drawer interactif (tap par clic, swipe, raccourcis iOS, envoi texte)
+- **Gear icon (admin)** : ouvre une modal de configuration : Devices / Groups / Access / Connection (IP Mini PC + test)
+- **Admin panel** : nouvel onglet "Phones" qui expose le même panneau de config
 
 ### v0.6.0 — 27 Mars 2026
 - Suppression complète de OneUp : routes `/api/admin/oneup/*`, carte API Key dans Admin, types TypeScript, colonnes DB (`oneup_social_network_id`, `oneup_social_network_name`, `oneup_category_id`), clé `oneup_api_key` dans settings
