@@ -104,6 +104,45 @@ export async function fetchDataset(datasetId: string, apiKey: string): Promise<u
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AdminClient = any;
 
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
+const THUMBNAIL_BUCKET = "post-thumbnails";
+
+/**
+ * Download a thumbnail image and upload it to Supabase Storage.
+ * Returns the permanent public URL, or null on failure.
+ */
+async function cacheThumbnail(
+  adminClient: AdminClient,
+  shortcode: string,
+  cdnUrl: string
+): Promise<string | null> {
+  try {
+    const res = await fetch(cdnUrl, {
+      headers: {
+        Referer: "https://www.instagram.com/",
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/122.0.0.0 Safari/537.36",
+      },
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!res.ok) return null;
+
+    const contentType = res.headers.get("content-type") ?? "image/jpeg";
+    const ext = contentType.includes("png") ? "png" : "jpg";
+    const path = `${shortcode}.${ext}`;
+    const buf = Buffer.from(await res.arrayBuffer());
+
+    const { error } = await adminClient.storage
+      .from(THUMBNAIL_BUCKET)
+      .upload(path, buf, { contentType, upsert: true });
+
+    if (error) return null;
+
+    return `${SUPABASE_URL}/storage/v1/object/public/${THUMBNAIL_BUCKET}/${path}`;
+  } catch {
+    return null;
+  }
+}
+
 /** Upsert posts + snapshots. Returns the number of posts successfully saved. */
 export async function upsertPosts(
   adminClient: AdminClient,
@@ -115,12 +154,24 @@ export async function upsertPosts(
   const errors: string[] = [];
   const now = new Date().toISOString();
 
+  // Track which posts need thumbnail caching (CDN URLs expire; store permanently)
+  const toCache: Array<{ id: string; shortcode: string; cdnUrl: string }> = [];
+
   for (const post of posts) {
     const sc = post.shortCode ?? (post as Record<string, unknown>).shortcode as string | undefined;
     if (!sc) {
       errors.push(`item without shortCode: ${JSON.stringify(Object.keys(post))}`);
       continue;
     }
+
+    // Check if we already have a permanent storage URL for this post
+    const { data: existing } = await adminClient
+      .from("instagram_posts")
+      .select("thumbnail_url")
+      .eq("shortcode", sc)
+      .single();
+
+    const alreadyCached = existing?.thumbnail_url?.includes("supabase.co/storage");
 
     const { data: upsertedPost, error: upsertErr } = await adminClient
       .from("instagram_posts")
@@ -131,7 +182,8 @@ export async function upsertPosts(
           post_type: mapPostType(post),
           url: post.url ?? `https://www.instagram.com/p/${sc}/`,
           caption: post.caption ?? null,
-          thumbnail_url: post.displayUrl ?? null,
+          // Keep existing storage URL if we have one, otherwise use CDN URL for now
+          thumbnail_url: alreadyCached ? existing!.thumbnail_url : (post.displayUrl ?? null),
           posted_at: post.timestamp ?? null,
           video_duration: post.videoDuration != null ? Math.round(post.videoDuration) : null,
           last_seen_at: now,
@@ -170,6 +222,26 @@ export async function upsertPosts(
           { onConflict: "post_id", ignoreDuplicates: false }
         );
     }
+
+    // Queue thumbnail cache if CDN URL is fresh and not yet stored permanently
+    if (!alreadyCached && post.displayUrl) {
+      toCache.push({ id: upsertedPost.id, shortcode: sc, cdnUrl: post.displayUrl });
+    }
+  }
+
+  // Cache thumbnails to Supabase Storage in parallel batches of 5
+  for (let i = 0; i < toCache.length; i += 5) {
+    await Promise.allSettled(
+      toCache.slice(i, i + 5).map(async ({ id, shortcode, cdnUrl }) => {
+        const permanentUrl = await cacheThumbnail(adminClient, shortcode, cdnUrl);
+        if (permanentUrl) {
+          await adminClient
+            .from("instagram_posts")
+            .update({ thumbnail_url: permanentUrl })
+            .eq("id", id);
+        }
+      })
+    );
   }
 
   return { postsSaved, errors };

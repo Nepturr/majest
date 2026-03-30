@@ -109,6 +109,8 @@ function relativeTime(iso: string | null): string {
 
 function proxyImg(url: string | null | undefined): string | null {
   if (!url) return null;
+  // Supabase storage URLs are already public — no proxy needed
+  if (url.includes(".supabase.co/storage/")) return url;
   return `/api/proxy/image?url=${encodeURIComponent(url)}`;
 }
 
