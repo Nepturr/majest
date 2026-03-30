@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import type { FunnelAccount } from "@/app/api/performance/funnel/route";
+import { PeriodDropdown } from "@/components/period-dropdown";
 
 // ─────────────────────────────────────────────────────────────
 // Types
@@ -678,21 +679,14 @@ export default function PerformancePage() {
             </div>
 
             {/* Period selector */}
-            <div className="flex items-center bg-zinc-900 border border-zinc-800 rounded-xl p-1 gap-0.5">
-              {(["yesterday", "today", "week", "month", "inception"] as Period[]).map((p) => (
-                <button
-                  key={p}
-                  onClick={() => setPeriod(p)}
-                  className={`px-3 py-1.5 text-sm rounded-lg transition-all font-medium ${
-                    period === p
-                      ? "bg-blue-600 text-white shadow"
-                      : "text-zinc-400 hover:text-white"
-                  }`}
-                >
-                  {PERIOD_LABELS[p]}
-                </button>
-              ))}
-            </div>
+            <PeriodDropdown
+              value={period}
+              onChange={(v) => setPeriod(v as Period)}
+              options={(["today", "yesterday", "week", "month", "inception"] as Period[]).map((p) => ({
+                key: p,
+                label: PERIOD_LABELS[p],
+              }))}
+            />
           </div>
         </div>
 

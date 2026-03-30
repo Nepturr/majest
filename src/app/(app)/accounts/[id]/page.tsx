@@ -11,6 +11,7 @@ import {
 import { PostMetadataPanel, hasMetadata } from "@/components/post-metadata-panel";
 import type { PostForPanel, PostMetadata } from "@/components/post-metadata-panel";
 import type { AccountAnalytics } from "@/app/api/instagram/[id]/analytics/route";
+import { PeriodDropdown } from "@/components/period-dropdown";
 
 // ─────────────────────────────────────────────────────────────
 // Types
@@ -119,104 +120,183 @@ function PostTypeIcon({ type, cls = "w-3 h-3" }: { type: Post["post_type"]; cls?
 }
 
 // ─────────────────────────────────────────────────────────────
-// SVG Chart components
+// Interactive Chart components
 // ─────────────────────────────────────────────────────────────
 
-/** Minimal area/line chart */
-function SparkArea({
+type ChartPoint = { date: string; value: number };
+
+function fmtDate(iso: string): string {
+  const d = new Date(iso);
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
+/** Interactive area/line chart with hover tooltip */
+function AreaChart({
   data,
   color = "#3b82f6",
-  height = 48,
+  height = 72,
+  formatValue = (v: number) => fmt(v),
+  gradId = "ac",
 }: {
-  data: number[];
+  data: ChartPoint[];
   color?: string;
   height?: number;
+  formatValue?: (v: number) => string;
+  gradId?: string;
 }) {
+  const [hovIdx, setHovIdx] = useState<number | null>(null);
+
   if (data.length < 2) {
     return (
       <div className="flex items-center justify-center text-zinc-700 text-[10px]" style={{ height }}>
-        Not enough data
+        Not enough data yet
       </div>
     );
   }
-  const w = 300;
-  const h = height;
-  const min = Math.min(...data);
-  const max = Math.max(...data);
-  const range = max - min || 1;
-  const pad = 4;
 
-  const pts = data.map((v, i) => [
-    (i / (data.length - 1)) * w,
-    h - pad - ((v - min) / range) * (h - pad * 2),
-  ]);
+  const W = 300, H = height, pad = 6;
+  const vals = data.map((d) => d.value);
+  const min = Math.min(...vals);
+  const max = Math.max(...vals, min + 1);
+  const range = max - min;
 
-  const pathD = pts.map((p, i) => `${i === 0 ? "M" : "L"} ${p[0].toFixed(1)} ${p[1].toFixed(1)}`).join(" ");
-  const areaD = `${pathD} L ${w} ${(h - pad).toFixed(1)} L 0 ${(h - pad).toFixed(1)} Z`;
-  const gradId = `g-${color.replace(/[^a-z0-9]/gi, "")}`;
+  const pts = data.map((d, i) => ({
+    x: (i / (data.length - 1)) * W,
+    y: H - pad - ((d.value - min) / range) * (H - pad * 2),
+    ...d,
+  }));
+
+  const lineD = pts.map((p, i) => `${i === 0 ? "M" : "L"} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(" ");
+  const areaD = `${lineD} L ${W} ${H} L 0 ${H} Z`;
+  const gid = `${gradId}-${color.replace(/[^a-z0-9]/gi, "")}`;
+
+  const hov = hovIdx != null ? pts[hovIdx] : null;
+  const tooltipLeft = hov ? Math.max(5, Math.min(95, (hov.x / W) * 100)) : 50;
 
   return (
-    <svg viewBox={`0 0 ${w} ${h}`} className="w-full" style={{ height }} preserveAspectRatio="none">
-      <defs>
-        <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor={color} stopOpacity="0.25" />
-          <stop offset="100%" stopColor={color} stopOpacity="0.02" />
-        </linearGradient>
-      </defs>
-      <path d={areaD} fill={`url(#${gradId})`} />
-      <path d={pathD} fill="none" stroke={color} strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" />
-      {/* Last point dot */}
-      <circle
-        cx={pts.at(-1)![0].toFixed(1)}
-        cy={pts.at(-1)![1].toFixed(1)}
-        r="2.5"
-        fill={color}
-      />
-    </svg>
+    <div className="relative w-full select-none" style={{ height }}>
+      <svg
+        viewBox={`0 0 ${W} ${H}`}
+        className="w-full h-full cursor-crosshair"
+        preserveAspectRatio="none"
+        onMouseMove={(e) => {
+          const rect = e.currentTarget.getBoundingClientRect();
+          const x = (e.clientX - rect.left) / rect.width;
+          setHovIdx(Math.max(0, Math.min(data.length - 1, Math.round(x * (data.length - 1)))));
+        }}
+        onMouseLeave={() => setHovIdx(null)}
+      >
+        <defs>
+          <linearGradient id={gid} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={color} stopOpacity="0.28" />
+            <stop offset="85%" stopColor={color} stopOpacity="0.03" />
+          </linearGradient>
+        </defs>
+        <path d={areaD} fill={`url(#${gid})`} />
+        <path d={lineD} fill="none" stroke={color} strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" />
+        {hov && (
+          <>
+            <line x1={hov.x.toFixed(1)} y1="0" x2={hov.x.toFixed(1)} y2={H}
+              stroke={color} strokeWidth="1" strokeDasharray="3 3" opacity="0.5" />
+            <circle cx={hov.x.toFixed(1)} cy={hov.y.toFixed(1)} r="3.5"
+              fill={color} stroke="#09090b" strokeWidth="1.5" />
+          </>
+        )}
+      </svg>
+      {hov && (
+        <div
+          className="absolute pointer-events-none z-20 bg-zinc-900/95 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-xs shadow-xl backdrop-blur-sm"
+          style={{ bottom: "calc(100% + 6px)", left: `${tooltipLeft}%`, transform: "translateX(-50%)" }}
+        >
+          <p className="font-semibold text-white whitespace-nowrap">{formatValue(hov.value)}</p>
+          <p className="text-zinc-500 whitespace-nowrap mt-0.5">{fmtDate(hov.date)}</p>
+        </div>
+      )}
+    </div>
   );
 }
 
-/** Mini bar chart */
-function MiniBarChart({
+/** Interactive bar chart with hover tooltip */
+function BarChart({
   data,
   color = "#6366f1",
-  height = 36,
+  height = 56,
+  formatValue = (v: number) => fmt(v),
+  gradId = "bc",
 }: {
-  data: number[];
+  data: ChartPoint[];
   color?: string;
   height?: number;
+  formatValue?: (v: number) => string;
+  gradId?: string;
 }) {
+  const [hovIdx, setHovIdx] = useState<number | null>(null);
+
   if (data.length === 0) {
     return (
       <div className="flex items-center justify-center text-zinc-700 text-[10px]" style={{ height }}>
-        No data
+        No data yet
       </div>
     );
   }
-  const max = Math.max(...data, 1);
-  const w = 300;
-  const h = height;
-  const gap = 1.5;
-  const barW = Math.max((w - gap * (data.length - 1)) / data.length, 1.5);
+
+  const W = 300, H = height;
+  const max = Math.max(...data.map((d) => d.value), 1);
+  const gap = 2;
+  const barW = Math.max((W - gap * (data.length - 1)) / data.length, 2);
+
+  const hov = hovIdx != null ? data[hovIdx] : null;
+  const tooltipLeft = hovIdx != null
+    ? Math.max(5, Math.min(95, ((hovIdx * (barW + gap) + barW / 2) / W) * 100))
+    : 50;
 
   return (
-    <svg viewBox={`0 0 ${w} ${h}`} className="w-full" style={{ height }} preserveAspectRatio="none">
-      {data.map((v, i) => {
-        const bh = Math.max((v / max) * h, 1.5);
-        return (
-          <rect
-            key={i}
-            x={i * (barW + gap)}
-            y={h - bh}
-            width={barW}
-            height={bh}
-            fill={color}
-            opacity={0.85}
-            rx="1"
-          />
-        );
-      })}
-    </svg>
+    <div className="relative w-full select-none" style={{ height }}>
+      <svg
+        viewBox={`0 0 ${W} ${H}`}
+        className="w-full h-full cursor-crosshair"
+        preserveAspectRatio="none"
+        onMouseMove={(e) => {
+          const rect = e.currentTarget.getBoundingClientRect();
+          const x = (e.clientX - rect.left) / rect.width * W;
+          const idx = Math.floor(x / (barW + gap));
+          setHovIdx(Math.max(0, Math.min(data.length - 1, idx)));
+        }}
+        onMouseLeave={() => setHovIdx(null)}
+      >
+        <defs>
+          <linearGradient id={`${gradId}-g`} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={color} stopOpacity="0.9" />
+            <stop offset="100%" stopColor={color} stopOpacity="0.5" />
+          </linearGradient>
+        </defs>
+        {data.map((d, i) => {
+          const bh = Math.max((d.value / max) * H, 1.5);
+          const isHov = i === hovIdx;
+          return (
+            <rect
+              key={i}
+              x={i * (barW + gap)}
+              y={H - bh}
+              width={barW}
+              height={bh}
+              fill={isHov ? color : `url(#${gradId}-g)`}
+              opacity={isHov ? 1 : 0.7}
+              rx="1"
+            />
+          );
+        })}
+      </svg>
+      {hov && (
+        <div
+          className="absolute pointer-events-none z-20 bg-zinc-900/95 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-xs shadow-xl backdrop-blur-sm"
+          style={{ bottom: "calc(100% + 6px)", left: `${tooltipLeft}%`, transform: "translateX(-50%)" }}
+        >
+          <p className="font-semibold text-white whitespace-nowrap">{formatValue(hov.value)}</p>
+          <p className="text-zinc-500 whitespace-nowrap mt-0.5">{fmtDate(hov.date)}</p>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -346,6 +426,7 @@ function ReelCard({ post, metaMap, onOpenMeta }: {
   metaMap: Map<string, PostMetadata>;
   onOpenMeta: (post: Post) => void;
 }) {
+  const [thumbErr, setThumbErr] = useState(false);
   const snap = post.latest_snapshot;
   const views = post.views_delta ?? snap?.views_count ?? snap?.plays_count;
   const er = engagementRate(post);
@@ -364,13 +445,14 @@ function ReelCard({ post, metaMap, onOpenMeta }: {
       }`}
       onClick={() => onOpenMeta(post)}
     >
-      {/* Thumbnail */}
+      {/* Thumbnail — with error fallback for expired CDN URLs */}
       <div className="relative overflow-hidden flex-shrink-0" style={{ aspectRatio: "9/16" }}>
-        {post.thumbnail_url ? (
+        {post.thumbnail_url && !thumbErr ? (
           <img
             src={proxyImg(post.thumbnail_url)!}
             alt=""
             className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+            onError={() => setThumbErr(true)}
           />
         ) : (
           <div className="w-full h-full flex items-center justify-center bg-zinc-800/80">
@@ -634,9 +716,10 @@ export default function AccountDetailPage() {
   const st = analytics?.stats;
 
   // Chart data (values only)
-  const followersChartData = analytics?.followers_history.map((d) => d.value) ?? [];
-  const viewsChartData = analytics?.views_history.map((d) => d.value) ?? [];
-  const bioChartData = analytics?.bio_clicks_history.map((d) => d.value) ?? [];
+  // Pass full ChartPoint arrays for interactive hover tooltips
+  const followersChartData: ChartPoint[] = analytics?.followers_history ?? [];
+  const viewsChartData: ChartPoint[] = analytics?.views_history ?? [];
+  const bioChartData: ChartPoint[] = analytics?.bio_clicks_history ?? [];
 
   // Period label for sub-text
   const periodLabel = PERIODS.find((p) => p.key === period)?.label ?? "";
@@ -714,20 +797,12 @@ export default function AccountDetailPage() {
       <div className="flex-1 px-6 py-6 max-w-screen-2xl mx-auto w-full space-y-6">
 
         {/* ── Period selector ────────────────────────────────── */}
-        <div className="flex items-center gap-1 bg-zinc-900 border border-zinc-800 rounded-xl p-1 w-fit">
-          {PERIODS.map((p) => (
-            <button
-              key={p.key}
-              onClick={() => setPeriod(p.key)}
-              className={`px-3.5 py-1.5 text-xs font-medium rounded-lg transition-all ${
-                period === p.key
-                  ? "bg-zinc-700 text-white"
-                  : "text-zinc-500 hover:text-zinc-300"
-              }`}
-            >
-              {p.label}
-            </button>
-          ))}
+        <div className="flex items-center justify-between">
+          <PeriodDropdown
+            value={period}
+            onChange={(v) => setPeriod(v as Period)}
+            options={PERIODS}
+          />
         </div>
 
         {/* ── Stats cards ────────────────────────────────────── */}
@@ -745,7 +820,7 @@ export default function AccountDetailPage() {
               sub={period !== "inception" && st?.views_delta != null ? `of ${fmt(st.views_total)} total` : null}
               icon={<Eye className="w-3 h-3" />}
               accent="blue"
-              chart={viewsChartData.length >= 2 ? <SparkArea data={viewsChartData} color="#3b82f6" height={40} /> : undefined}
+              chart={viewsChartData.length >= 2 ? <AreaChart data={viewsChartData} color="#3b82f6" height={40} gradId="vc" /> : undefined}
             />
             <StatCard
               label="Followers"
@@ -753,7 +828,7 @@ export default function AccountDetailPage() {
               sub={st?.followers_delta != null ? `${st.followers_delta > 0 ? "+" : ""}${fmt(st.followers_delta)} ${periodLabel}` : null}
               icon={<Users className="w-3 h-3" />}
               accent="violet"
-              chart={followersChartData.length >= 2 ? <SparkArea data={followersChartData} color="#8b5cf6" height={40} /> : undefined}
+              chart={followersChartData.length >= 2 ? <AreaChart data={followersChartData} color="#8b5cf6" height={40} gradId="fc" /> : undefined}
             />
             <StatCard
               label="Bio Clicks"
@@ -761,7 +836,7 @@ export default function AccountDetailPage() {
               sub={st?.bio_clicks_na ? "No full history — use a period" : periodLabel}
               icon={<Link2 className="w-3 h-3" />}
               accent={st?.bio_clicks_na ? "blue" : "cyan"}
-              chart={!st?.bio_clicks_na && bioChartData.length >= 2 ? <MiniBarChart data={bioChartData} color="#06b6d4" height={32} /> : undefined}
+              chart={!st?.bio_clicks_na && bioChartData.length >= 2 ? <BarChart data={bioChartData} color="#06b6d4" height={32} gradId="bc" /> : undefined}
             />
             <StatCard
               label={period === "inception" ? "Track Clicks (all-time)" : "Track Clicks"}
@@ -806,30 +881,34 @@ export default function AccountDetailPage() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             {/* Followers trend */}
             <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4">
-              <p className="text-[10px] text-zinc-500 uppercase tracking-wide font-medium mb-3 flex items-center gap-1.5">
-                <Users className="w-3 h-3" /> Followers over time
-              </p>
-              <SparkArea data={followersChartData} color="#8b5cf6" height={72} />
-              {followersChartData.length >= 2 && (
-                <div className="flex justify-between text-[10px] text-zinc-700 mt-1.5">
-                  <span>{fmt(followersChartData[0])}</span>
-                  <span>{fmt(followersChartData.at(-1))}</span>
-                </div>
-              )}
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-[10px] text-zinc-500 uppercase tracking-wide font-medium flex items-center gap-1.5">
+                  <Users className="w-3 h-3" /> Followers over time
+                </p>
+                {followersChartData.length >= 2 && (
+                  <div className="flex gap-3 text-[10px] text-zinc-600">
+                    <span>{fmt(followersChartData[0].value)}</span>
+                    <span className="text-zinc-400 font-medium">→ {fmt(followersChartData.at(-1)!.value)}</span>
+                  </div>
+                )}
+              </div>
+              <AreaChart data={followersChartData} color="#8b5cf6" height={80} gradId="ftl" />
             </div>
 
             {/* Views trend */}
             <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4">
-              <p className="text-[10px] text-zinc-500 uppercase tracking-wide font-medium mb-3 flex items-center gap-1.5">
-                <Eye className="w-3 h-3" /> Total views over time
-              </p>
-              <SparkArea data={viewsChartData} color="#3b82f6" height={72} />
-              {viewsChartData.length >= 2 && (
-                <div className="flex justify-between text-[10px] text-zinc-700 mt-1.5">
-                  <span>{fmt(viewsChartData[0])}</span>
-                  <span>{fmt(viewsChartData.at(-1))}</span>
-                </div>
-              )}
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-[10px] text-zinc-500 uppercase tracking-wide font-medium flex items-center gap-1.5">
+                  <Eye className="w-3 h-3" /> Total views over time
+                </p>
+                {viewsChartData.length >= 2 && (
+                  <div className="flex gap-3 text-[10px] text-zinc-600">
+                    <span>{fmt(viewsChartData[0].value)}</span>
+                    <span className="text-zinc-400 font-medium">→ {fmt(viewsChartData.at(-1)!.value)}</span>
+                  </div>
+                )}
+              </div>
+              <AreaChart data={viewsChartData} color="#3b82f6" height={80} gradId="vtl" />
             </div>
 
             {/* Country donut */}
