@@ -44,26 +44,35 @@ function unwrapJoin<T>(v: T | T[] | null): T | null {
   return v;
 }
 
+const ALL_SOURCES = ["gms", "ofapi", "instagram"] as const;
+type Source = typeof ALL_SOURCES[number];
+
 /**
- * POST /api/collect/daily
- * Collecte complète pour tous les comptes actifs :
- *   1. GMS overview snapshot (total clicks + Tier 1 %) — sert au delta période
- *   2. OFAPI tracking link snapshot (cumulatif, delta sur période)
- *   3. Apify Instagram sync (profil + posts + métriques)
- *
- * Protégé : CRON_SECRET (Vercel) ou session admin.
+ * GET /api/collect/daily  ← appelé par Vercel Cron (envoie GET, pas POST)
+ * Lance la collecte complète avec toutes les sources.
+ */
+export async function GET(req: NextRequest) {
+  if (!(await isAuthorized(req))) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  return runCollection(new Set<Source>(ALL_SOURCES));
+}
+
+/**
+ * POST /api/collect/daily  ← déclenchement manuel depuis l'admin
+ * Body optionnel : { sources: ["gms", "ofapi", "instagram"] }
  */
 export async function POST(req: NextRequest) {
   if (!(await isAuthorized(req))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-
-  // sources: tableau de "gms" | "ofapi" | "instagram" — défaut = tout
   const body = await req.json().catch(() => ({}));
-  const allSources = ["gms", "ofapi", "instagram"] as const;
-  type Source = typeof allSources[number];
-  const sourcesRaw: string[] = Array.isArray(body.sources) ? body.sources : allSources;
-  const sources = new Set<Source>(sourcesRaw.filter((s): s is Source => allSources.includes(s as Source)));
+  const sourcesRaw: string[] = Array.isArray(body.sources) ? body.sources : ALL_SOURCES;
+  const sources = new Set<Source>(sourcesRaw.filter((s): s is Source => ALL_SOURCES.includes(s as Source)));
+  return runCollection(sources);
+}
+
+async function runCollection(sources: Set<Source>) {
 
   const adminClient = createAdminClient();
   const settings = await getSettings();

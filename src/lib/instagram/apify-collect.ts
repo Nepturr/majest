@@ -154,6 +154,21 @@ export async function upsertPosts(
   const errors: string[] = [];
   const now = new Date().toISOString();
 
+  // Batch-fetch existing thumbnail_url for all shortcodes in ONE query
+  // Covers never change — once cached to Storage, we never re-download
+  const shortcodes = posts.map(
+    (p) => p.shortCode ?? (p as Record<string, unknown>).shortcode as string | undefined
+  ).filter((s): s is string => !!s);
+
+  const { data: existingRows } = await adminClient
+    .from("instagram_posts")
+    .select("shortcode, thumbnail_url")
+    .in("shortcode", shortcodes);
+
+  const existingThumbMap = new Map<string, string | null>(
+    (existingRows ?? []).map((r: { shortcode: string; thumbnail_url: string | null }) => [r.shortcode, r.thumbnail_url])
+  );
+
   // Track which posts need thumbnail caching (CDN URLs expire; store permanently)
   const toCache: Array<{ id: string; shortcode: string; cdnUrl: string }> = [];
 
@@ -164,14 +179,8 @@ export async function upsertPosts(
       continue;
     }
 
-    // Check if we already have a permanent storage URL for this post
-    const { data: existing } = await adminClient
-      .from("instagram_posts")
-      .select("thumbnail_url")
-      .eq("shortcode", sc)
-      .single();
-
-    const alreadyCached = existing?.thumbnail_url?.includes("supabase.co/storage");
+    const existingThumb = existingThumbMap.get(sc) ?? null;
+    const alreadyCached = existingThumb?.includes("supabase.co/storage") ?? false;
 
     const { data: upsertedPost, error: upsertErr } = await adminClient
       .from("instagram_posts")
@@ -183,7 +192,7 @@ export async function upsertPosts(
           url: post.url ?? `https://www.instagram.com/p/${sc}/`,
           caption: post.caption ?? null,
           // Keep existing storage URL if we have one, otherwise use CDN URL for now
-          thumbnail_url: alreadyCached ? existing!.thumbnail_url : (post.displayUrl ?? null),
+          thumbnail_url: alreadyCached ? existingThumb : (post.displayUrl ?? null),
           posted_at: post.timestamp ?? null,
           video_duration: post.videoDuration != null ? Math.round(post.videoDuration) : null,
           last_seen_at: now,
