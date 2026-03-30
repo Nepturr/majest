@@ -757,23 +757,23 @@ export default function AccountDetailPage() {
             />
             <StatCard
               label="Bio Clicks"
-              value={fmt(st?.bio_clicks)}
-              sub={periodLabel}
+              value={st?.bio_clicks_na ? "N/A" : fmt(st?.bio_clicks)}
+              sub={st?.bio_clicks_na ? "No full history — use a period" : periodLabel}
               icon={<Link2 className="w-3 h-3" />}
-              accent="cyan"
-              chart={bioChartData.length >= 2 ? <MiniBarChart data={bioChartData} color="#06b6d4" height={32} /> : undefined}
+              accent={st?.bio_clicks_na ? "blue" : "cyan"}
+              chart={!st?.bio_clicks_na && bioChartData.length >= 2 ? <MiniBarChart data={bioChartData} color="#06b6d4" height={32} /> : undefined}
             />
             <StatCard
-              label="Track Clicks"
-              value={fmt(st?.track_clicks_total)}
-              sub="all-time"
+              label={period === "inception" ? "Track Clicks (all-time)" : "Track Clicks"}
+              value={st?.needs_more_data ? "—" : fmt(period === "inception" ? st?.track_clicks_total : st?.track_clicks_delta)}
+              sub={st?.needs_more_data ? "Need 2+ collects" : period === "inception" ? "all-time" : periodLabel}
               icon={<MousePointerClick className="w-3 h-3" />}
               accent="indigo"
             />
             <StatCard
-              label="Subscribers"
-              value={fmt(st?.subscribers_total)}
-              sub="all-time OF"
+              label={period === "inception" ? "Subscribers (all-time)" : "Subscribers"}
+              value={st?.needs_more_data ? "—" : fmt(period === "inception" ? st?.subscribers_total : st?.subscribers_delta)}
+              sub={st?.needs_more_data ? "Need 2+ collects" : period === "inception" ? "all-time OF" : periodLabel}
               icon={<UserCheck className="w-3 h-3" />}
               accent="emerald"
             />
@@ -848,16 +848,17 @@ export default function AccountDetailPage() {
         )}
 
         {/* ── Funnel bar ─────────────────────────────────────── */}
-        {!loadingAnalytics && st && (st.track_clicks_total ?? 0) > 0 && (
+        {!loadingAnalytics && st && ((period === "inception" ? st.track_clicks_total : st.track_clicks_delta) ?? 0) > 0 && (
           <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4">
             <p className="text-[10px] text-zinc-500 uppercase tracking-wide font-medium mb-4 flex items-center gap-1.5">
-              <TrendingUp className="w-3 h-3" /> Funnel (all-time)
+              <TrendingUp className="w-3 h-3" /> Funnel {period === "inception" ? "(all-time)" : `(${periodLabel})`}
             </p>
             {(() => {
-              const views  = st.views_total ?? 0;
-              const bio    = st.bio_clicks ?? 0;
-              const track  = st.track_clicks_total ?? 0;
-              const subs   = st.subscribers_total ?? 0;
+              const views  = (period === "inception" ? st.views_total : st.views_delta) ?? 0;
+              // GMS bio clicks: N/A for inception
+              const bio    = (!st.bio_clicks_na && st.bio_clicks != null) ? st.bio_clicks : null;
+              const track  = (period === "inception" ? st.track_clicks_total : st.track_clicks_delta) ?? 0;
+              const subs   = (period === "inception" ? st.subscribers_total : st.subscribers_delta) ?? 0;
               const rev    = st.revenue_total;
               const top    = Math.max(views, 1);
               const bar = (label: string, val: number, color: string) => (
@@ -873,9 +874,9 @@ export default function AccountDetailPage() {
                 </div>
               );
               return (
-                <div className="space-y-2.5">
+                  <div className="space-y-2.5">
                   {bar("Views", views, "bg-blue-600")}
-                  {bio > 0 && bar("Bio Clicks", bio, "bg-indigo-500")}
+                  {bio != null && bio > 0 && bar("Bio Clicks", bio, "bg-indigo-500")}
                   {track > 0 && bar("Track Clicks", track, "bg-violet-500")}
                   {subs > 0 && bar("Subscribers", subs, "bg-emerald-500")}
                   {rev != null && rev > 0 && (

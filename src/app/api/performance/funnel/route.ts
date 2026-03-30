@@ -339,10 +339,11 @@ export async function GET(req: NextRequest) {
         avg_plays: agg && agg.cntP > 0 ? Math.round(agg.sumP / agg.cntP) : null,
         total_posts_in_db: agg?.total ?? 0,
       },
-      gms: account.get_my_social_link_id
+      // GMS = daily snapshots since we started collecting.
+      // For inception, we can't know the true all-time total → return null (N/A).
+      // For other periods, sum the daily snapshots within the period.
+      gms: (!inception && account.get_my_social_link_id)
         ? (() => {
-            // GMS = données journalières → somme des snapshots dans la période
-            // Si aucun snapshot dans la période, on affiche 0 (pas de données collectées ce jour-là)
             const hasData = gmsPeriod != null && gmsPeriod.snapCount > 0;
             return {
               clicks: hasData ? gmsPeriod!.totalClicks : 0,

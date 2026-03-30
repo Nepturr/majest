@@ -338,14 +338,29 @@ function MiniPostCard({ post }: { post: PerfPost }) {
 // ─────────────────────────────────────────────────────────────
 function AccountRow({ account }: { account: FunnelAccount }) {
   const ig = account.instagram;
-  const gms = account.gms;
+  const gms = account.gms; // null for inception (no full history available)
   const track = account.tracking;
 
+  const isTotal = track?.is_total ?? false; // true = "inception" → display all-time totals
+
+  // For non-inception: use deltas (what changed during the period).
+  // For inception: use all-time cumulative totals.
+  const displayClicks = isTotal ? (track?.clicks_total ?? null) : (track?.clicks_delta ?? null);
+  const displaySubs   = isTotal ? (track?.subscribers_total ?? null) : (track?.subscribers_delta ?? null);
+  const needsMoreData = track?.needs_more_data ?? false;
+
   const followers = ig.followers_current;
-  const funnelBase = ig.views_delta ?? followers;
-  const bioCtr = gms && funnelBase ? (gms.clicks / funnelBase) * 100 : null;
-  const trackCtr = gms && gms.clicks > 0 ? ((track?.clicks_total ?? 0) / gms.clicks) * 100 : null;
-  const subRate = track && track.clicks_total > 0 ? (track.subscribers_total / track.clicks_total) * 100 : null;
+  const funnelBase = ig.views_delta ?? ig.views_current ?? followers;
+
+  // CTR calculations — only when we have coherent period data
+  const bioCtr    = gms && funnelBase ? (gms.clicks / funnelBase) * 100 : null;
+  const trackCtr  = gms && gms.clicks > 0 && displayClicks != null
+    ? (displayClicks / gms.clicks) * 100
+    : null;
+  // Sub-per-click rate: consistent within same scope
+  const displayClicksForRate = isTotal ? (track?.clicks_total ?? 0) : (displayClicks ?? 0);
+  const displaySubsForRate   = isTotal ? (track?.subscribers_total ?? 0) : (displaySubs ?? 0);
+  const subRate = displayClicksForRate > 0 ? (displaySubsForRate / displayClicksForRate) * 100 : null;
 
   return (
     <tr className="border-b border-zinc-800 hover:bg-zinc-900/40 transition-colors">
@@ -384,39 +399,68 @@ function AccountRow({ account }: { account: FunnelAccount }) {
         <p className="text-[10px] text-zinc-600 mt-0.5">all-time</p>
       </td>
 
-      {/* Bio clicks */}
+      {/* Bio clicks — N/A for inception (no full-history GMS data) */}
       <td className="px-4 py-3 text-right">
-        <p className="text-sm font-semibold text-white">{fmt(gms?.clicks)}</p>
-        <RateBadge rate={bioCtr} thresholds={[3, 1]} />
+        {gms != null ? (
+          <>
+            <p className="text-sm font-semibold text-white">{fmt(gms.clicks)}</p>
+            <RateBadge rate={bioCtr} thresholds={[3, 1]} />
+          </>
+        ) : (
+          <>
+            <p className="text-sm font-semibold text-zinc-600">N/A</p>
+            <p className="text-[10px] text-zinc-700 mt-0.5">no history</p>
+          </>
+        )}
       </td>
 
-      {/* Track clicks total (OF) */}
+      {/* Track clicks (delta or total) */}
       <td className="px-4 py-3 text-right">
-        <p className="text-sm font-semibold text-white">{fmt(track?.clicks_total)}</p>
-        <RateBadge rate={trackCtr} thresholds={[30, 10]} />
+        {needsMoreData ? (
+          <>
+            <p className="text-sm font-semibold text-zinc-600">—</p>
+            <p className="text-[10px] text-zinc-700 mt-0.5">collecting…</p>
+          </>
+        ) : (
+          <>
+            <p className="text-sm font-semibold text-white">{fmt(displayClicks)}</p>
+            {isTotal && <p className="text-[10px] text-zinc-600 mt-0.5">all-time</p>}
+            {!isTotal && <RateBadge rate={trackCtr} thresholds={[30, 10]} />}
+          </>
+        )}
       </td>
 
-      {/* Subs total (OF) */}
+      {/* Subs (delta or total) */}
       <td className="px-4 py-3 text-right">
-        <p className="text-sm font-semibold text-white">{fmt(track?.subscribers_total)}</p>
-        <RateBadge rate={subRate} thresholds={[5, 2]} />
+        {needsMoreData ? (
+          <>
+            <p className="text-sm font-semibold text-zinc-600">—</p>
+            <p className="text-[10px] text-zinc-700 mt-0.5">collecting…</p>
+          </>
+        ) : (
+          <>
+            <p className="text-sm font-semibold text-white">{fmt(displaySubs)}</p>
+            {isTotal && <p className="text-[10px] text-zinc-600 mt-0.5">all-time</p>}
+            {!isTotal && <RateBadge rate={subRate} thresholds={[5, 2]} />}
+          </>
+        )}
       </td>
 
-      {/* LTV = revenue_total / subscribers_total */}
+      {/* LTV = revenue_total / subscribers_total (always all-time — contextual metric) */}
       <td className="px-4 py-3 text-right">
         {(() => {
-          const ltv = track?.revenue_total != null && track.subscribers_total > 0
+          const ltv = track?.revenue_total != null && (track.subscribers_total ?? 0) > 0
             ? track.revenue_total / track.subscribers_total
             : null;
           return ltv != null ? (
             <>
               <p className="text-sm font-semibold text-emerald-400">${ltv.toFixed(2)}</p>
-              <p className="text-[10px] text-zinc-500 mt-0.5">${track!.revenue_total!.toFixed(0)} / {track!.subscribers_total} subs</p>
+              <p className="text-[10px] text-zinc-500 mt-0.5">${track!.revenue_total!.toFixed(0)} total</p>
             </>
           ) : (
             <>
               <p className="text-sm font-semibold text-zinc-600">—</p>
-              <p className="text-[10px] text-zinc-700 mt-0.5">sync OF req.</p>
+              <p className="text-[10px] text-zinc-700 mt-0.5">no OF data</p>
             </>
           );
         })()}
@@ -533,32 +577,38 @@ export default function PerformancePage() {
     : (data?.accounts ?? []);
 
   // Aggregate KPIs
+  const isInception = period === "inception";
   const totalFollowers = accounts.reduce((s, a) => s + (a.instagram.followers_current ?? 0), 0);
   const totalViews = accounts.reduce((s, a) => s + (a.instagram.views_delta ?? 0), 0);
   const hasViewData = accounts.some((a) => a.instagram.views_delta != null);
-  const totalBioClicks = accounts.reduce((s, a) => s + (a.gms?.clicks ?? 0), 0);
-  const totalTrackClicks = accounts.reduce((s, a) => s + (a.tracking?.clicks_delta ?? 0), 0);
-  const totalSubs = accounts.reduce((s, a) => s + (a.tracking?.subscribers_delta ?? 0), 0);
-  // Totaux all-time pour fallback d'affichage
-  const totalTrackClicksAllTime = accounts.reduce((s, a) => s + (a.tracking?.clicks_total ?? 0), 0);
-  const totalSubsAllTime = accounts.reduce((s, a) => s + (a.tracking?.subscribers_total ?? 0), 0);
-  // Is any metric showing a total rather than a period delta?
-  const gmsTotalMode = accounts.some((a) => a.gms && !a.gms.is_delta);
-  const trackTotalMode = accounts.some((a) => a.tracking?.is_total);
-  const trackNeedsData = accounts.some((a) => a.tracking?.needs_more_data);
-  const isInception = period === "inception";
+
+  // GMS = null for inception (no full historical data available)
+  const hasGmsData = !isInception && accounts.some((a) => a.gms != null);
+  const totalBioClicks = hasGmsData
+    ? accounts.reduce((s, a) => s + (a.gms?.clicks ?? 0), 0)
+    : 0;
+
+  // OFAPI: for inception show totals, otherwise show deltas
+  const totalTrackClicks = isInception
+    ? accounts.reduce((s, a) => s + (a.tracking?.clicks_total ?? 0), 0)
+    : accounts.reduce((s, a) => s + (a.tracking?.clicks_delta ?? 0), 0);
+  const totalSubs = isInception
+    ? accounts.reduce((s, a) => s + (a.tracking?.subscribers_total ?? 0), 0)
+    : accounts.reduce((s, a) => s + (a.tracking?.subscribers_delta ?? 0), 0);
+
+  const trackNeedsData = !isInception && accounts.some((a) => a.tracking?.needs_more_data);
 
   // Use views as top of funnel if available, otherwise followers
   const funnelTop = hasViewData ? totalViews : totalFollowers;
   const funnelTopLabel = hasViewData ? "Views" : "Followers";
-  const globalBioCtr = funnelTop > 0 ? (totalBioClicks / funnelTop) * 100 : null;
-  const globalTrackCtr = totalBioClicks > 0 ? (totalTrackClicks / totalBioClicks) * 100 : null;
+  const globalBioCtr = hasGmsData && funnelTop > 0 ? (totalBioClicks / funnelTop) * 100 : null;
+  const globalTrackCtr = hasGmsData && totalBioClicks > 0 ? (totalTrackClicks / totalBioClicks) * 100 : null;
   const globalSubRate = totalTrackClicks > 0 ? (totalSubs / totalTrackClicks) * 100 : null;
 
-  // Funnel chart stages
+  // Funnel chart stages — for inception, skip Bio Clicks (N/A)
   const chartStages: ChartStage[] = [
     { label: funnelTopLabel, value: funnelTop, pct: 100 },
-    { label: "Bio Clicks", value: totalBioClicks, pct: funnelTop > 0 ? (totalBioClicks / funnelTop) * 100 : 0 },
+    ...(hasGmsData ? [{ label: "Bio Clicks", value: totalBioClicks, pct: funnelTop > 0 ? (totalBioClicks / funnelTop) * 100 : 0 }] : []),
     { label: "Track Clicks", value: totalTrackClicks, pct: funnelTop > 0 ? (totalTrackClicks / funnelTop) * 100 : 0 },
     { label: "Subscribers", value: totalSubs, pct: funnelTop > 0 ? (totalSubs / funnelTop) * 100 : 0 },
   ].filter((s) => s.value > 0 || s.label === funnelTopLabel);
@@ -716,18 +766,18 @@ export default function PerformancePage() {
                 }
               />
               <KpiCard
-                label={gmsTotalMode && !isInception ? "Bio Clicks (total)" : "Bio Clicks"}
-                value={fmt(totalBioClicks)}
+                label="Bio Clicks"
+                value={isInception ? "N/A" : fmt(totalBioClicks)}
                 sub={
-                  totalBioClicks === 0
-                    ? "Lance une collecte →"
+                  isInception
+                    ? "No full history — use a period"
                     : globalBioCtr != null
                       ? `CTR ${globalBioCtr.toFixed(1)}%`
-                      : gmsTotalMode && !isInception
-                        ? "Total cumulatif — 2e collecte pour le delta"
+                      : totalBioClicks === 0
+                        ? "Run a collect →"
                         : undefined
                 }
-                color="bg-sky-500/10 text-sky-400"
+                color={isInception ? "bg-zinc-800/50 text-zinc-600" : "bg-sky-500/10 text-sky-400"}
                 icon={
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-5 h-5">
                     <path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/>
@@ -737,14 +787,14 @@ export default function PerformancePage() {
               />
               <KpiCard
                 label={isInception ? "Track Clicks (all-time)" : "Track Clicks"}
-                value={trackNeedsData && !isInception ? fmt(totalTrackClicksAllTime) : fmt(totalTrackClicks)}
+                value={trackNeedsData ? "—" : fmt(totalTrackClicks)}
                 sub={
-                  trackNeedsData && !isInception
-                    ? `Total all-time — delta dispo après 2ème collecte`
+                  trackNeedsData
+                    ? "Need 2 collects for delta"
                     : globalTrackCtr != null
                       ? `CTR ${globalTrackCtr.toFixed(1)}%`
                       : isInception
-                        ? "Cumul depuis le début"
+                        ? "All-time cumulative"
                         : undefined
                 }
                 color="bg-violet-500/10 text-violet-400"
@@ -756,14 +806,14 @@ export default function PerformancePage() {
               />
               <KpiCard
                 label={isInception ? "Subscribers (all-time)" : "Subscribers"}
-                value={trackNeedsData && !isInception ? fmt(totalSubsAllTime) : fmt(totalSubs)}
+                value={trackNeedsData ? "—" : fmt(totalSubs)}
                 sub={
-                  trackNeedsData && !isInception
-                    ? `Total all-time — delta dispo après 2ème collecte`
+                  trackNeedsData
+                    ? "Need 2 collects for delta"
                     : globalSubRate != null
                       ? `Conv. ${globalSubRate.toFixed(1)}%`
                       : isInception
-                        ? "Cumul depuis le début"
+                        ? "All-time cumulative"
                         : undefined
                 }
                 color="bg-emerald-500/10 text-emerald-400"
