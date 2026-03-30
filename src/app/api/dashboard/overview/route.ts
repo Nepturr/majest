@@ -79,11 +79,20 @@ export async function GET(req: NextRequest) {
   // ── 1. Active accounts + latest snapshots ─────────────────────────────────
   const { data: accounts } = await admin
     .from("instagram_accounts")
-    .select("id, handle")
+    .select("id, instagram_handle")
     .eq("status", "active");
 
   const accountIds = (accounts ?? []).map((a) => a.id);
-  const accountHandleMap = new Map((accounts ?? []).map((a) => [a.id, a.handle]));
+  const accountHandleMap = new Map((accounts ?? []).map((a: { id: string; instagram_handle: string }) => [a.id, a.instagram_handle]));
+
+  // Guard: skip DB queries if no active accounts
+  if (accountIds.length === 0) {
+    return NextResponse.json({
+      period, total_posts: 0, active_accounts: 0, total_views: 0,
+      total_views_delta: null, total_likes: 0, total_comments: 0, total_shares: 0,
+      total_followers: 0, avg_engagement_rate: 0, daily: [], top_posts: [], top_accounts: [],
+    } satisfies DashboardOverview);
+  }
 
   // Latest account snapshots (followers, total_views)
   const { data: latestSnapRows } = await admin
@@ -91,7 +100,7 @@ export async function GET(req: NextRequest) {
     .select("instagram_account_id, followers_count, total_views, collected_at")
     .in("instagram_account_id", accountIds)
     .order("collected_at", { ascending: false })
-    .limit(accountIds.length * 10);
+    .limit(Math.max(accountIds.length * 20, 100));
 
   const latestSnap = new Map<string, { followers: number; total_views: number }>();
   for (const s of latestSnapRows ?? []) {

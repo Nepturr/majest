@@ -1,9 +1,10 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { NextRequest, NextResponse } from "next/server";
+import { upsertPosts as sharedUpsertPosts, mapPostType } from "@/lib/instagram/apify-collect";
 
 const APIFY_PROFILE_ACTOR = "apify~instagram-scraper";
-const APIFY_REELS_ACTOR  = "apify~instagram-reel-scraper"; // scraper dédié réels
+const APIFY_REELS_ACTOR  = "apify~instagram-reel-scraper";
 const APIFY_BASE = "https://api.apify.com/v2";
 
 async function verifyAuth() {
@@ -183,13 +184,13 @@ export async function GET(
     if (!snapErr) snapshotSaved = true;
 
     const posts: ApifyPost[] = profile.latestPosts ?? [];
-    const result = await upsertPosts(adminClient, id, runId, posts);
+    const result = await sharedUpsertPosts(adminClient, id, runId, posts);
     postsSaved = result.postsSaved;
     upsertErrors = result.errors;
   } else {
     // ── Reels / posts scan ────────────────────────────────────
     const posts = items as ApifyPost[];
-    const result = await upsertPosts(adminClient, id, runId, posts);
+    const result = await sharedUpsertPosts(adminClient, id, runId, posts);
     postsSaved = result.postsSaved;
     upsertErrors = result.errors;
     snapshotSaved = false;
@@ -206,106 +207,11 @@ export async function GET(
   });
 }
 
-// ─────────────────────────────────────────────────────────────
-// Helper: upsert posts + snapshots
-// ─────────────────────────────────────────────────────────────
-async function upsertPosts(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  adminClient: any,
-  accountId: string,
-  runId: string,
-  posts: ApifyPost[]
-): Promise<{ postsSaved: number; errors: string[] }> {
-  let postsSaved = 0;
-  const errors: string[] = [];
-
-  for (const post of posts) {
-    // Le champ peut être shortCode (camelCase) ou shortcode (lowercase selon l'acteur)
-    const sc = post.shortCode ?? (post as Record<string, unknown>).shortcode as string | undefined;
-    if (!sc) {
-      errors.push(`item sans shortCode: ${JSON.stringify(Object.keys(post))}`);
-      continue;
-    }
-
-    const postType = mapPostType(post);
-
-    const { data: upsertedPost, error: upsertErr } = await adminClient
-      .from("instagram_posts")
-      .upsert(
-        {
-          instagram_account_id: accountId,
-          shortcode: sc,
-          post_type: postType,
-          url: post.url ?? `https://www.instagram.com/p/${sc}/`,
-          caption: post.caption ?? null,
-          thumbnail_url: post.displayUrl ?? null,
-          posted_at: post.timestamp ?? null,
-          video_duration: post.videoDuration != null ? Math.round(post.videoDuration) : null,
-          last_seen_at: new Date().toISOString(),
-          is_active: true,
-        },
-        { onConflict: "shortcode", ignoreDuplicates: false }
-      )
-      .select("id")
-      .single();
-
-    if (upsertErr || !upsertedPost?.id) {
-      errors.push(`upsert post ${sc}: ${upsertErr?.message ?? "no id returned"}`);
-      continue;
-    }
-
-    const { error: snapErr } = await adminClient
-      .from("instagram_post_snapshots")
-      .insert({
-        post_id: upsertedPost.id,
-        likes_count: post.likesCount ?? null,
-        comments_count: post.commentsCount ?? null,
-        shares_count: post.sharesCount ?? null,
-        views_count: post.videoViewCount ?? null,
-        plays_count: post.videoPlayCount ?? null,
-        apify_run_id: runId,
-      });
-
-    if (snapErr) {
-      // Snapshot en doublon (même run déjà sauvegardé) — on ignore, le post est ok
-      if (!snapErr.message?.includes("duplicate") && !snapErr.code?.includes("23505")) {
-        errors.push(`snapshot ${sc}: ${snapErr.message}`);
-      }
-    }
-
-    postsSaved++;
-
-    // Auto-persist duration_seconds
-    if (post.videoDuration != null) {
-      await adminClient
-        .from("instagram_post_metadata")
-        .upsert(
-          { post_id: upsertedPost.id, duration_seconds: Math.round(post.videoDuration) },
-          { onConflict: "post_id", ignoreDuplicates: false }
-        );
-    }
-  }
-  return { postsSaved, errors };
-}
-
 // ── Types ────────────────────────────────────────────────────
 type ApifyItem = ApifyInstagramProfile | ApifyPost;
 
-interface ApifyPost {
-  shortCode?: string;
-  type?: string;
-  productType?: string;
-  url?: string;
-  caption?: string;
-  displayUrl?: string;
-  timestamp?: string;
-  likesCount?: number;
-  commentsCount?: number;
-  sharesCount?: number;
-  videoViewCount?: number;
-  videoPlayCount?: number;
-  videoDuration?: number;
-}
+// Re-use types from shared module (compatible shape)
+type ApifyPost = Parameters<typeof sharedUpsertPosts>[3][number];
 
 interface ApifyInstagramProfile {
   username?: string;
@@ -317,13 +223,4 @@ interface ApifyInstagramProfile {
   profilePicUrl?: string;
   profilePicUrlHD?: string;
   latestPosts?: ApifyPost[];
-}
-
-function mapPostType(post: ApifyPost): "Image" | "Video" | "Reel" | "Sidecar" {
-  if (post.productType === "clips") return "Reel";
-  if (post.productType === "igtv") return "Video";
-  const t = (post.type ?? "").toLowerCase();
-  if (t === "video") return "Video";
-  if (t === "sidecar" || t === "graphsidecar") return "Sidecar";
-  return "Image";
 }

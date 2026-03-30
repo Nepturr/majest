@@ -830,7 +830,10 @@ export default function AccountDetailPage() {
               sub={st?.followers_delta != null ? `${st.followers_delta > 0 ? "+" : ""}${fmt(st.followers_delta)} ${periodLabel}` : null}
               icon={<Users className="w-3 h-3" />}
               accent="violet"
-              chart={followersChartData.length >= 2 ? <AreaChart data={followersChartData} color="#8b5cf6" height={40} gradId="fc" /> : undefined}
+              chart={followersChartData.length >= 2
+                ? <AreaChart data={followersChartData} color="#8b5cf6" height={40} gradId="fc"
+                    formatValue={(v) => v.toLocaleString()} />
+                : undefined}
             />
             <StatCard
               label="Bio Clicks"
@@ -855,16 +858,16 @@ export default function AccountDetailPage() {
               accent="emerald"
             />
             <StatCard
-              label="Revenue"
-              value={fmtMoney(st?.revenue_total)}
-              sub="all-time OF"
+              label={period === "inception" ? "Revenue (all-time)" : "Revenue"}
+              value={st?.needs_more_data ? "—" : fmtMoney(period === "inception" ? st?.revenue_total : st?.revenue_delta)}
+              sub={st?.needs_more_data ? "Need 2+ collects" : period === "inception" ? "all-time OF" : periodLabel}
               icon={<DollarSign className="w-3 h-3" />}
               accent="amber"
             />
             <StatCard
               label="LTV"
               value={st?.ltv != null ? `$${st.ltv.toFixed(2)}` : "—"}
-              sub="revenue / sub"
+              sub="revenue / sub (all-time)"
               icon={<TrendingUp className="w-3 h-3" />}
               accent="amber"
             />
@@ -894,7 +897,8 @@ export default function AccountDetailPage() {
                   </div>
                 )}
               </div>
-              <AreaChart data={followersChartData} color="#8b5cf6" height={80} gradId="ftl" />
+              <AreaChart data={followersChartData} color="#8b5cf6" height={80} gradId="ftl"
+                formatValue={(v) => v.toLocaleString()} />
             </div>
 
             {/* Views trend */}

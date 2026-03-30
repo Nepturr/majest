@@ -38,6 +38,8 @@ export interface AccountAnalytics {
     track_clicks_delta: number | null;
     subscribers_delta: number | null;
     revenue_total: number | null;
+    /** Revenue for the selected period (delta); null for inception (= revenue_total) */
+    revenue_delta: number | null;
     ltv: number | null;
     needs_more_data: boolean; // no period-start OFAPI snapshot yet
   };
@@ -187,15 +189,17 @@ export async function GET(
   // OFAPI delta for non-inception periods
   let track_clicks_delta: number | null = null;
   let subscribers_delta: number | null = null;
+  let revenue_delta: number | null = null;
   let needs_more_data = false;
 
   if (period === "inception") {
     track_clicks_delta = track_clicks_total;
     subscribers_delta = subscribers_total;
+    revenue_delta = revenue_total;
   } else if (startIso && track_clicks_total != null) {
     const { data: prevTracking } = await adminClient
       .from("tracking_link_snapshots")
-      .select("clicks_count, subscribers_count")
+      .select("clicks_count, subscribers_count, revenue_total")
       .eq("instagram_account_id", id)
       .lte("collected_at", startIso)
       .order("collected_at", { ascending: false })
@@ -205,6 +209,9 @@ export async function GET(
     if (prevTracking) {
       track_clicks_delta = Math.max(0, track_clicks_total - prevTracking.clicks_count);
       subscribers_delta = Math.max(0, subscribers_total! - prevTracking.subscribers_count);
+      revenue_delta = revenue_total != null && prevTracking.revenue_total != null
+        ? Math.max(0, revenue_total - prevTracking.revenue_total)
+        : null;
     } else {
       needs_more_data = true; // no snapshot before period start yet
     }
@@ -224,6 +231,7 @@ export async function GET(
       track_clicks_delta,
       subscribers_delta,
       revenue_total,
+      revenue_delta,
       ltv,
       needs_more_data,
     },
