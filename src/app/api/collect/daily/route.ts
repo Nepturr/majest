@@ -13,7 +13,12 @@ const TIER1_2 = new Set(["US", "GB", "CA", "AU", "DE", "FR"]);
 async function isAuthorized(req: NextRequest): Promise<boolean> {
   const cronSecret = process.env.CRON_SECRET;
   const authHeader = req.headers.get("authorization");
+
+  // Vercel cron with CRON_SECRET configured
   if (cronSecret && authHeader === `Bearer ${cronSecret}`) return true;
+
+  // Vercel cron without CRON_SECRET — header x-vercel-cron is always sent by Vercel infra
+  if (!cronSecret && req.headers.get("x-vercel-cron") === "1") return true;
 
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();

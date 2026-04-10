@@ -1,22 +1,31 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import Link from "next/link";
-import type { FunnelAccount } from "@/app/api/performance/funnel/route";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { PeriodDropdown } from "@/components/period-dropdown";
+import { useAuth } from "@/components/auth-provider";
+import type { IgAccountData, IgAvailableAccount, IgPerformanceResponse } from "@/app/api/performance/instagram/route";
 
 // ─────────────────────────────────────────────────────────────
-// Types
+// Types & constants
 // ─────────────────────────────────────────────────────────────
 type Period = "today" | "yesterday" | "week" | "month" | "inception";
 
-interface Model { id: string; name: string; avatar_url: string | null; }
+const PERIOD_LABELS: Record<Period, string> = {
+  today: "Aujourd'hui",
+  yesterday: "Hier",
+  week: "7 derniers jours",
+  month: "30 derniers jours",
+  inception: "Depuis inception",
+};
 
-interface FunnelData {
-  accounts: FunnelAccount[];
-  models: Model[];
-  period: Period;
-}
+const ACCOUNT_COLORS = [
+  "#3b82f6", "#8b5cf6", "#ec4899", "#10b981",
+  "#f59e0b", "#ef4444", "#06b6d4", "#f97316",
+  "#84cc16", "#a855f7", "#14b8a6", "#fb923c",
+];
+
+const LS_PERIOD_KEY = "perf_ig_period";
+const LS_ACCOUNTS_KEY = "perf_ig_selected_accounts";
 
 // ─────────────────────────────────────────────────────────────
 // Helpers
@@ -28,306 +37,386 @@ function fmt(n: number | null | undefined): string {
   return n.toLocaleString();
 }
 
-function pct(num: number | null | undefined, den: number | null | undefined, decimals = 1): string {
-  if (!num || !den || den === 0) return "—";
-  return `${((num / den) * 100).toFixed(decimals)}%`;
-}
-
-function delta(n: number | null): string {
-  if (n == null) return "—";
+function fmtDelta(n: number | null): string {
+  if (n == null) return "";
   return n >= 0 ? `+${fmt(n)}` : fmt(n);
 }
-
-type Color = "green" | "yellow" | "red" | "neutral";
-
-function rateColor(rate: number | null, thresholds: [number, number]): Color {
-  if (rate == null) return "neutral";
-  if (rate >= thresholds[0]) return "green";
-  if (rate >= thresholds[1]) return "yellow";
-  return "red";
-}
-
-const colorClasses: Record<Color, string> = {
-  green: "text-emerald-400 bg-emerald-400/10",
-  yellow: "text-amber-400 bg-amber-400/10",
-  red: "text-red-400 bg-red-400/10",
-  neutral: "text-zinc-500 bg-zinc-800/60",
-};
 
 // ─────────────────────────────────────────────────────────────
 // IgAvatar
 // ─────────────────────────────────────────────────────────────
-function IgAvatar({ url, handle, size = 32 }: { url: string | null; handle: string; size?: number }) {
+function IgAvatar({ url, handle, size = 28 }: { url: string | null; handle: string; size?: number }) {
   const [err, setErr] = useState(false);
   if (!url || err) {
-    const initials = handle.slice(0, 2).toUpperCase();
-    const style = { width: size, height: size, borderRadius: "50%", background: "linear-gradient(135deg,#9333ea,#db2777)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: Math.max(10, size * 0.35), color: "#fff", fontWeight: 700, flexShrink: 0 };
-    return <div style={style}>{initials}</div>;
+    return (
+      <div
+        style={{ width: size, height: size, borderRadius: "50%", background: "linear-gradient(135deg,#9333ea,#db2777)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: Math.max(9, size * 0.38), color: "#fff", fontWeight: 700, flexShrink: 0 }}
+      >
+        {handle.slice(0, 2).toUpperCase()}
+      </div>
+    );
   }
-  return <img src={url} alt={handle} width={size} height={size} style={{ borderRadius: "50%", objectFit: "cover", flexShrink: 0 }} onError={() => setErr(true)} />;
-}
-
-// ─────────────────────────────────────────────────────────────
-// Funnel Chart (Shopify-style SVG)
-// ─────────────────────────────────────────────────────────────
-interface ChartStage {
-  label: string;
-  sublabel?: string;
-  value: number;
-  pct: number; // % relative to first stage
-}
-
-function FunnelChart({ stages }: { stages: ChartStage[] }) {
-  if (stages.length === 0) return null;
-
-  const barW = 90;
-  const gap = 50;
-  const maxH = 160;
-  const padTop = 56;
-  const padBottom = 48;
-  const totalW = stages.length * barW + (stages.length - 1) * gap;
-  const totalH = padTop + maxH + padBottom;
-
   return (
-    <svg
-      viewBox={`0 0 ${totalW} ${totalH}`}
-      className="w-full"
-      style={{ maxHeight: 280 }}
-      preserveAspectRatio="xMidYMid meet"
-    >
-      {stages.map((stage, i) => {
-        const bh = Math.max(4, (stage.pct / 100) * maxH);
-        const bx = i * (barW + gap);
-        const by = padTop + maxH - bh;
-        const next = stages[i + 1];
-
-        return (
-          <g key={i}>
-            {/* Connecting trapezoid to next bar */}
-            {next && (() => {
-              const nextBh = Math.max(4, (next.pct / 100) * maxH);
-              const nextBy = padTop + maxH - nextBh;
-              const x1 = bx + barW;
-              const x2 = bx + barW + gap;
-              return (
-                <path
-                  d={`M ${x1} ${by} L ${x2} ${nextBy} L ${x2} ${padTop + maxH} L ${x1} ${padTop + maxH} Z`}
-                  fill="rgba(59,130,246,0.15)"
-                />
-              );
-            })()}
-
-            {/* Bar */}
-            <rect x={bx} y={by} width={barW} height={bh} rx="4" fill="#3b82f6" />
-
-            {/* % above bar */}
-            <text
-              x={bx + barW / 2}
-              y={by - 10}
-              textAnchor="middle"
-              fontSize="11"
-              fontWeight="600"
-              fill="#60a5fa"
-            >
-              {stage.pct.toFixed(stage.pct < 1 ? 2 : 1)}%
-            </text>
-
-            {/* Conversion arrow between bars */}
-            {next && (
-              <text
-                x={bx + barW + gap / 2}
-                y={padTop + maxH / 2 + 4}
-                textAnchor="middle"
-                fontSize="10"
-                fill="#52525b"
-              >
-                ▶
-              </text>
-            )}
-
-            {/* Stage label bottom */}
-            <text
-              x={bx + barW / 2}
-              y={padTop + maxH + 16}
-              textAnchor="middle"
-              fontSize="11"
-              fill="#a1a1aa"
-              fontWeight="500"
-            >
-              {stage.label}
-            </text>
-
-            {/* Value bottom */}
-            <text
-              x={bx + barW / 2}
-              y={padTop + maxH + 32}
-              textAnchor="middle"
-              fontSize="11"
-              fill="#71717a"
-            >
-              {fmt(stage.value)}
-            </text>
-
-            {/* Conv rate from previous */}
-            {i > 0 && (
-              <text
-                x={bx + barW / 2}
-                y={padTop - 12}
-                textAnchor="middle"
-                fontSize="9"
-                fill="#52525b"
-              >
-                {pct(stage.value, stages[i - 1].value, 1)} conv.
-              </text>
-            )}
-          </g>
-        );
-      })}
-    </svg>
+    <img src={`/api/proxy/image?url=${encodeURIComponent(url)}`} alt={handle} width={size} height={size} style={{ borderRadius: "50%", objectFit: "cover", flexShrink: 0 }} onError={() => setErr(true)} />
   );
 }
 
 // ─────────────────────────────────────────────────────────────
-// KPI Card
+// Account selector dropdown
 // ─────────────────────────────────────────────────────────────
-function KpiCard({
-  label,
-  value,
-  sub,
-  icon,
-  color,
-}: {
-  label: string;
-  value: string;
-  sub?: string;
-  icon: React.ReactNode;
-  color: string;
-}) {
+interface AccountSelectorProps {
+  accounts: IgAvailableAccount[];
+  selected: Set<string>;
+  colors: Map<string, string>;
+  onChange: (id: string) => void;
+}
+
+function AccountSelector({ accounts, selected, colors, onChange }: AccountSelectorProps) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function onOut(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", onOut);
+    return () => document.removeEventListener("mousedown", onOut);
+  }, []);
+
+  const selectedCount = selected.size;
+  const total = accounts.length;
+
   return (
-    <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 flex gap-4 items-start">
-      <div className={`rounded-lg p-2.5 ${color}`}>{icon}</div>
-      <div className="min-w-0">
-        <p className="text-xs text-zinc-500 font-medium uppercase tracking-wide mb-1">{label}</p>
-        <p className="text-2xl font-bold text-white leading-none">{value}</p>
-        {sub && <p className="text-xs text-zinc-500 mt-1">{sub}</p>}
+    <div className="relative" ref={ref}>
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="flex items-center gap-2 pl-3 pr-2.5 py-2 rounded-xl bg-zinc-900 border border-zinc-800 hover:border-zinc-600 text-sm font-medium text-white transition-all select-none"
+      >
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-3.5 h-3.5 text-zinc-400">
+          <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" />
+        </svg>
+        <span className="whitespace-nowrap">
+          {selectedCount === total ? "Tous les comptes" : `${selectedCount} / ${total} compte${total > 1 ? "s" : ""}`}
+        </span>
+        <svg className={`w-3.5 h-3.5 text-zinc-500 transition-transform duration-150 ${open ? "rotate-180" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <polyline points="6 9 12 15 18 9" />
+        </svg>
+      </button>
+
+      {open && (
+        <div className="absolute top-full mt-1.5 right-0 z-50 bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl py-2 min-w-[220px] overflow-hidden">
+          <div className="px-3 pb-2 mb-1 border-b border-zinc-800 flex items-center justify-between">
+            <span className="text-[10px] text-zinc-500 uppercase tracking-wide font-medium">Comptes</span>
+            <button
+              onClick={() => { accounts.forEach((a) => { if (!selected.has(a.id)) onChange(a.id); }); setOpen(false); }}
+              className="text-[10px] text-zinc-500 hover:text-zinc-300 transition-colors"
+            >
+              Tout sélectionner
+            </button>
+          </div>
+          {accounts.map((account) => {
+            const isSelected = selected.has(account.id);
+            const color = colors.get(account.id) ?? "#3b82f6";
+            return (
+              <button
+                key={account.id}
+                onClick={() => onChange(account.id)}
+                className={`w-full flex items-center gap-2.5 px-3 py-2 text-sm transition-colors ${isSelected ? "text-white" : "text-zinc-600 hover:text-zinc-400"}`}
+              >
+                <div className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 transition-all ${isSelected ? "border-transparent" : "border-zinc-600"}`}
+                  style={isSelected ? { background: color } : undefined}
+                >
+                  {isSelected && (
+                    <svg viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" className="w-2.5 h-2.5">
+                      <polyline points="20 6 9 17 4 12" />
+                    </svg>
+                  )}
+                </div>
+                <IgAvatar url={account.profile_pic_url} handle={account.instagram_handle} size={22} />
+                <span className="truncate max-w-[130px]">@{account.instagram_handle}</span>
+                <div className="ml-auto w-2 h-2 rounded-full shrink-0" style={{ background: isSelected ? color : "#3f3f46" }} />
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
+// Multi-line chart
+// ─────────────────────────────────────────────────────────────
+interface LineData {
+  accountId: string;
+  handle: string;
+  color: string;
+  points: Array<{ date: string; value: number }>;
+}
+
+interface MultiLineChartProps {
+  lines: LineData[];
+  label?: string;
+  formatY?: (v: number) => string;
+}
+
+function MultiLineChart({ lines, label, formatY = fmt }: MultiLineChartProps) {
+  const [hover, setHover] = useState<{ x: number; dateIdx: number } | null>(null);
+  const svgRef = useRef<SVGSVGElement>(null);
+
+  const W = 800;
+  const H = 200;
+  const padL = 52;
+  const padR = 16;
+  const padT = 16;
+  const padB = 32;
+
+  // Collect all unique dates
+  const allDates = useMemo(() => {
+    const set = new Set<string>();
+    for (const line of lines) for (const p of line.points) set.add(p.date);
+    return [...set].sort();
+  }, [lines]);
+
+  // Extent
+  const allValues = lines.flatMap((l) => l.points.map((p) => p.value));
+  const minV = allValues.length > 0 ? Math.min(...allValues) : 0;
+  const maxV = allValues.length > 0 ? Math.max(...allValues) : 1;
+  const range = maxV - minV || 1;
+
+  const xScale = (i: number) => padL + (i / Math.max(allDates.length - 1, 1)) * (W - padL - padR);
+  const yScale = (v: number) => padT + (1 - (v - minV) / range) * (H - padT - padB);
+
+  // Hover date index
+  const hoverDateIdx = hover?.dateIdx ?? null;
+  const hoverDate = hoverDateIdx != null ? allDates[hoverDateIdx] : null;
+
+  const onMouseMove = useCallback((e: React.MouseEvent<SVGSVGElement>) => {
+    const rect = svgRef.current?.getBoundingClientRect();
+    if (!rect || allDates.length === 0) return;
+    const svgX = ((e.clientX - rect.left) / rect.width) * W;
+    const relX = svgX - padL;
+    const totalW = W - padL - padR;
+    const frac = Math.max(0, Math.min(1, relX / totalW));
+    const idx = Math.round(frac * (allDates.length - 1));
+    setHover({ x: xScale(idx), dateIdx: idx });
+  }, [allDates, xScale]);
+
+  if (lines.length === 0 || allDates.length === 0) {
+    return (
+      <div className="flex items-center justify-center h-48 text-zinc-600 text-sm">Aucune donnée disponible</div>
+    );
+  }
+
+  // Y axis ticks
+  const yTicks = [0, 0.25, 0.5, 0.75, 1].map((f) => ({
+    y: padT + (1 - f) * (H - padT - padB),
+    label: formatY(Math.round(minV + f * range)),
+  }));
+
+  // X axis ticks (max 6)
+  const xTickStep = Math.max(1, Math.floor(allDates.length / 6));
+  const xTicks = allDates
+    .filter((_, i) => i % xTickStep === 0 || i === allDates.length - 1)
+    .map((d, _, arr) => ({ date: d, x: xScale(allDates.indexOf(d)) }));
+  void xTicks;
+
+  return (
+    <div className="relative">
+      {label && <p className="text-xs text-zinc-500 font-medium uppercase tracking-wide mb-3">{label}</p>}
+      <svg
+        ref={svgRef}
+        viewBox={`0 0 ${W} ${H}`}
+        className="w-full"
+        style={{ height: 200 }}
+        onMouseMove={onMouseMove}
+        onMouseLeave={() => setHover(null)}
+      >
+        {/* Grid lines */}
+        {yTicks.map((t, i) => (
+          <g key={i}>
+            <line x1={padL} y1={t.y} x2={W - padR} y2={t.y} stroke="#27272a" strokeWidth="1" />
+            <text x={padL - 6} y={t.y + 4} textAnchor="end" fontSize="9" fill="#52525b">{t.label}</text>
+          </g>
+        ))}
+
+        {/* Lines */}
+        {lines.map((line) => {
+          const pts = allDates.map((date) => {
+            const found = line.points.find((p) => p.date === date);
+            return found ? { x: xScale(allDates.indexOf(date)), y: yScale(found.value), hasData: true } : null;
+          });
+
+          // Build path segments (connect only adjacent non-null points)
+          const segments: string[] = [];
+          let current = "";
+          for (const pt of pts) {
+            if (!pt) { if (current) { segments.push(current); current = ""; } continue; }
+            current += current ? ` L ${pt.x.toFixed(1)} ${pt.y.toFixed(1)}` : `M ${pt.x.toFixed(1)} ${pt.y.toFixed(1)}`;
+          }
+          if (current) segments.push(current);
+
+          return (
+            <g key={line.accountId}>
+              {segments.map((seg, i) => (
+                <path key={i} d={seg} fill="none" stroke={line.color} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" opacity="0.85" />
+              ))}
+              {/* Dots at data points */}
+              {pts.map((pt, i) =>
+                pt ? (
+                  <circle key={i} cx={pt.x} cy={pt.y} r="2.5" fill={line.color} opacity="0.7" />
+                ) : null
+              )}
+            </g>
+          );
+        })}
+
+        {/* Hover vertical line */}
+        {hover && (
+          <line
+            x1={hover.x} y1={padT} x2={hover.x} y2={H - padB}
+            stroke="#52525b" strokeWidth="1" strokeDasharray="3 2"
+          />
+        )}
+
+        {/* Hover dots */}
+        {hover && lines.map((line) => {
+          const found = hoverDate ? line.points.find((p) => p.date === hoverDate) : null;
+          if (!found) return null;
+          return (
+            <circle key={line.accountId} cx={hover.x} cy={yScale(found.value)} r="4" fill={line.color} stroke="#18181b" strokeWidth="2" />
+          );
+        })}
+
+        {/* X axis dates */}
+        {allDates
+          .filter((_, i) => i % Math.max(1, Math.floor(allDates.length / 5)) === 0 || i === allDates.length - 1)
+          .map((date) => {
+            const i = allDates.indexOf(date);
+            const d = new Date(date);
+            const label = `${d.getDate()}/${d.getMonth() + 1}`;
+            return (
+              <text key={date} x={xScale(i)} y={H - padB + 14} textAnchor="middle" fontSize="9" fill="#52525b">{label}</text>
+            );
+          })}
+      </svg>
+
+      {/* Tooltip */}
+      {hover && hoverDate && (
+        <div
+          className="absolute top-0 pointer-events-none z-10"
+          style={{ left: `${(hover.x / W) * 100}%`, transform: hover.x > W * 0.65 ? "translateX(calc(-100% - 8px))" : "translateX(8px)" }}
+        >
+          <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-3 shadow-2xl min-w-[140px]">
+            <p className="text-[10px] text-zinc-500 font-medium mb-2">
+              {new Date(hoverDate).toLocaleDateString("fr-FR", { day: "2-digit", month: "short" })}
+            </p>
+            {lines.map((line) => {
+              const found = line.points.find((p) => p.date === hoverDate);
+              return (
+                <div key={line.accountId} className="flex items-center gap-2 mb-1">
+                  <div className="w-2 h-2 rounded-full shrink-0" style={{ background: line.color }} />
+                  <span className="text-xs text-zinc-400 truncate max-w-[80px]">@{line.handle}</span>
+                  <span className="text-xs text-white font-semibold ml-auto">{found ? formatY(found.value) : "—"}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
+// Stat cards row
+// ─────────────────────────────────────────────────────────────
+function AccountStatCard({ account, color }: { account: IgAccountData; color: string }) {
+  const s = account.stats;
+  return (
+    <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 space-y-3">
+      <div className="flex items-center gap-2.5">
+        <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: color }} />
+        <IgAvatar url={account.profile_pic_url} handle={account.instagram_handle} size={24} />
+        <p className="text-sm font-medium text-white truncate">@{account.instagram_handle}</p>
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <div>
+          <p className="text-[10px] text-zinc-500 uppercase tracking-wide">Followers</p>
+          <p className="text-base font-bold text-white">{fmt(s.followers_current)}</p>
+          {s.followers_delta != null && (
+            <p className={`text-[10px] font-medium ${s.followers_delta >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+              {fmtDelta(s.followers_delta)}
+            </p>
+          )}
+        </div>
+        <div>
+          <p className="text-[10px] text-zinc-500 uppercase tracking-wide">Moy. vues</p>
+          <p className="text-base font-bold text-white">{fmt(s.avg_views)}</p>
+        </div>
+        <div>
+          <p className="text-[10px] text-zinc-500 uppercase tracking-wide">Moy. likes</p>
+          <p className="text-sm font-semibold text-white">{fmt(s.avg_likes)}</p>
+        </div>
+        <div>
+          <p className="text-[10px] text-zinc-500 uppercase tracking-wide">Reels</p>
+          <p className="text-sm font-semibold text-white">{s.total_reels}</p>
+        </div>
       </div>
     </div>
   );
 }
 
 // ─────────────────────────────────────────────────────────────
-// RateBadge
+// Reel card
 // ─────────────────────────────────────────────────────────────
-function RateBadge({ rate, thresholds }: { rate: number | null; thresholds: [number, number] }) {
-  if (rate == null) return <span className="text-xs text-zinc-600">—</span>;
-  const c = rateColor(rate, thresholds);
-  return (
-    <span className={`text-xs font-semibold px-1.5 py-0.5 rounded ${colorClasses[c]}`}>
-      {rate.toFixed(1)}%
-    </span>
-  );
-}
-
-// ─────────────────────────────────────────────────────────────
-// MiniPostCard — kept for potential future use (not in main table)
-// ─────────────────────────────────────────────────────────────
-function postEngagementRate(post: PerfPost): number | null {
-  const snap = post.latest_snapshot;
-  if (!snap) return null;
-  const interactions = (snap.likes_count ?? 0) + (snap.comments_count ?? 0);
-  const views = snap.views_count ?? snap.plays_count;
-  if (!views) return null;
-  return (interactions / views) * 100;
-}
-
-interface PerfPost {
-  id: string;
-  shortcode: string;
-  post_type: string;
-  url: string;
-  caption: string | null;
-  thumbnail_url: string | null;
-  posted_at: string | null;
-  is_active: boolean;
-  last_seen_at: string | null;
-  latest_snapshot: {
-    likes_count: number | null;
-    comments_count: number | null;
-    views_count: number | null;
-    plays_count: number | null;
-    collected_at: string;
-  } | null;
-}
-
-function MiniPostCard({ post }: { post: PerfPost }) {
+function ReelCard({ reel, color }: { reel: IgAccountData["top_reels"][number]; color: string }) {
   const [hover, setHover] = useState(false);
-  const snap = post.latest_snapshot;
-  const views = snap?.views_count ?? snap?.plays_count;
-  const er = postEngagementRate(post);
-  const stale = post.last_seen_at
-    ? Date.now() - new Date(post.last_seen_at).getTime() > 14 * 86400000
-    : false;
-  const inactive = !post.is_active || stale;
-
   return (
     <a
-      href={post.url}
+      href={reel.url}
       target="_blank"
       rel="noopener noreferrer"
-      title={post.caption?.slice(0, 100) ?? ""}
-      className={`relative rounded-lg overflow-hidden border transition-all block ${
-        inactive
-          ? "opacity-40 border-zinc-800 grayscale"
-          : "border-zinc-700 hover:border-zinc-500"
-      }`}
+      className="relative rounded-xl overflow-hidden border border-zinc-800 hover:border-zinc-600 transition-all block"
       style={{ aspectRatio: "9/16" }}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
     >
-      {post.thumbnail_url ? (
-        <img src={`/api/proxy/image?url=${encodeURIComponent(post.thumbnail_url)}`} alt="" className="w-full h-full object-cover" />
+      {reel.thumbnail_url ? (
+        <img src={`/api/proxy/image?url=${encodeURIComponent(reel.thumbnail_url)}`} alt="" className="w-full h-full object-cover" />
       ) : (
-        <div className="w-full h-full bg-zinc-800 flex items-center justify-center text-zinc-600 text-xs">
-          {post.post_type}
+        <div className="w-full h-full bg-zinc-800 flex items-center justify-center">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#52525b" strokeWidth="1.5" className="w-8 h-8">
+            <polygon points="5 3 19 12 5 21 5 3" />
+          </svg>
         </div>
       )}
 
-      {/* Type badge */}
-      {(post.post_type === "Reel" || post.post_type === "Video") && (
-        <div className="absolute top-1 left-1 bg-black/60 rounded px-1 py-0.5 text-[9px] text-white font-medium">
-          {post.post_type === "Reel" ? "▶ Reel" : "▶ Vid"}
-        </div>
-      )}
+      {/* Account color strip */}
+      <div className="absolute top-0 left-0 right-0 h-0.5" style={{ background: color }} />
 
-      {/* Stale badge */}
-      {stale && (
-        <div className="absolute top-1 right-1 bg-orange-500/80 rounded px-1 py-0.5 text-[9px] text-white font-medium">
-          stale
+      {/* Bottom views */}
+      {!hover && reel.views != null && (
+        <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent px-2 py-2">
+          <p className="text-white text-[10px] font-semibold">👁 {fmt(reel.views)}</p>
         </div>
       )}
 
       {/* Hover overlay */}
-      {hover && !inactive && (
-        <div className="absolute inset-0 bg-black/75 flex flex-col justify-end p-2 gap-1">
-          {views != null && (
-            <div className="text-white text-[10px] font-semibold">{fmt(views)} vues</div>
+      {hover && (
+        <div className="absolute inset-0 bg-black/80 flex flex-col justify-end p-2 gap-0.5">
+          {reel.views != null && <p className="text-white text-[10px] font-bold">{fmt(reel.views)} vues</p>}
+          {reel.likes != null && <p className="text-zinc-300 text-[10px]">♥ {fmt(reel.likes)}</p>}
+          {reel.comments != null && <p className="text-zinc-400 text-[10px]">💬 {fmt(reel.comments)}</p>}
+          {reel.shares != null && reel.shares > 0 && <p className="text-zinc-400 text-[10px]">↗ {fmt(reel.shares)}</p>}
+          {reel.engagement_rate != null && (
+            <p className="text-emerald-400 text-[10px] font-semibold">{reel.engagement_rate.toFixed(1)}% ER</p>
           )}
-          {snap?.likes_count != null && (
-            <div className="text-zinc-300 text-[10px]">♥ {fmt(snap.likes_count)}</div>
+          {reel.posted_at && (
+            <p className="text-zinc-600 text-[9px] mt-1">
+              {new Date(reel.posted_at).toLocaleDateString("fr-FR", { day: "2-digit", month: "short" })}
+            </p>
           )}
-          {er != null && (
-            <div className="text-emerald-400 text-[10px] font-semibold">{er.toFixed(1)}% ER</div>
-          )}
-          {snap?.comments_count != null && (
-            <div className="text-zinc-400 text-[10px]">💬 {fmt(snap.comments_count)}</div>
-          )}
-        </div>
-      )}
-
-      {/* Views always visible at bottom */}
-      {!hover && views != null && (
-        <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent px-1.5 py-1.5">
-          <p className="text-white text-[10px] font-semibold">👁 {fmt(views)}</p>
         </div>
       )}
     </a>
@@ -335,353 +424,167 @@ function MiniPostCard({ post }: { post: PerfPost }) {
 }
 
 // ─────────────────────────────────────────────────────────────
-// Account Row — stats en ligne, bouton Détails
-// ─────────────────────────────────────────────────────────────
-function AccountRow({ account }: { account: FunnelAccount }) {
-  const ig = account.instagram;
-  const gms = account.gms; // null for inception (no full history available)
-  const track = account.tracking;
-
-  const isTotal = track?.is_total ?? false; // true = "inception" → display all-time totals
-
-  // For non-inception: use deltas (what changed during the period).
-  // For inception: use all-time cumulative totals.
-  const displayClicks = isTotal ? (track?.clicks_total ?? null) : (track?.clicks_delta ?? null);
-  const displaySubs   = isTotal ? (track?.subscribers_total ?? null) : (track?.subscribers_delta ?? null);
-  const needsMoreData = track?.needs_more_data ?? false;
-
-  const followers = ig.followers_current;
-  const funnelBase = ig.views_delta ?? ig.views_current ?? followers;
-
-  // CTR calculations — only when we have coherent period data
-  const bioCtr    = gms && funnelBase ? (gms.clicks / funnelBase) * 100 : null;
-  const trackCtr  = gms && gms.clicks > 0 && displayClicks != null
-    ? (displayClicks / gms.clicks) * 100
-    : null;
-  // Sub-per-click rate: consistent within same scope
-  const displayClicksForRate = isTotal ? (track?.clicks_total ?? 0) : (displayClicks ?? 0);
-  const displaySubsForRate   = isTotal ? (track?.subscribers_total ?? 0) : (displaySubs ?? 0);
-  const subRate = displayClicksForRate > 0 ? (displaySubsForRate / displayClicksForRate) * 100 : null;
-
-  return (
-    <tr className="border-b border-zinc-800 hover:bg-zinc-900/40 transition-colors">
-
-      {/* Account */}
-      <td className="px-4 py-3">
-        <div className="flex items-center gap-3">
-          <IgAvatar url={ig.profile_pic_url} handle={account.instagram_handle} size={32} />
-          <div>
-            <p className="text-sm font-medium text-white leading-none">@{account.instagram_handle}</p>
-            {account.model && (
-              <p className="text-xs text-zinc-500 mt-0.5">{account.model.name}</p>
-            )}
-          </div>
-        </div>
-      </td>
-
-      {/* Views période */}
-      <td className="px-4 py-3 text-right">
-        {ig.views_delta != null ? (
-          <>
-            <p className="text-sm font-semibold text-white">{fmt(ig.views_delta)}</p>
-            <p className="text-[10px] text-zinc-600 mt-0.5">{fmt(followers)} followers</p>
-          </>
-        ) : (
-          <>
-            <p className="text-sm font-semibold text-white">{fmt(followers)}</p>
-            <p className="text-[10px] text-zinc-600 mt-0.5">followers</p>
-          </>
-        )}
-      </td>
-
-      {/* Views totales (all-time) */}
-      <td className="px-4 py-3 text-right">
-        <p className="text-sm font-semibold text-white">{fmt(ig.views_current)}</p>
-        <p className="text-[10px] text-zinc-600 mt-0.5">all-time</p>
-      </td>
-
-      {/* Bio clicks — N/A for inception (no full-history GMS data) */}
-      <td className="px-4 py-3 text-right">
-        {gms != null ? (
-          <>
-            <p className="text-sm font-semibold text-white">{fmt(gms.clicks)}</p>
-            <RateBadge rate={bioCtr} thresholds={[3, 1]} />
-          </>
-        ) : (
-          <>
-            <p className="text-sm font-semibold text-zinc-600">N/A</p>
-            <p className="text-[10px] text-zinc-700 mt-0.5">no history</p>
-          </>
-        )}
-      </td>
-
-      {/* Track clicks (delta or total) */}
-      <td className="px-4 py-3 text-right">
-        {needsMoreData ? (
-          <>
-            <p className="text-sm font-semibold text-zinc-600">—</p>
-            <p className="text-[10px] text-zinc-700 mt-0.5">collecting…</p>
-          </>
-        ) : (
-          <>
-            <p className="text-sm font-semibold text-white">{fmt(displayClicks)}</p>
-            {isTotal && <p className="text-[10px] text-zinc-600 mt-0.5">all-time</p>}
-            {!isTotal && <RateBadge rate={trackCtr} thresholds={[30, 10]} />}
-          </>
-        )}
-      </td>
-
-      {/* Subs (delta or total) */}
-      <td className="px-4 py-3 text-right">
-        {needsMoreData ? (
-          <>
-            <p className="text-sm font-semibold text-zinc-600">—</p>
-            <p className="text-[10px] text-zinc-700 mt-0.5">collecting…</p>
-          </>
-        ) : (
-          <>
-            <p className="text-sm font-semibold text-white">{fmt(displaySubs)}</p>
-            {isTotal && <p className="text-[10px] text-zinc-600 mt-0.5">all-time</p>}
-            {!isTotal && <RateBadge rate={subRate} thresholds={[5, 2]} />}
-          </>
-        )}
-      </td>
-
-      {/* LTV = revenue_total / subscribers_total (always all-time — contextual metric) */}
-      <td className="px-4 py-3 text-right">
-        {(() => {
-          const ltv = track?.revenue_total != null && (track.subscribers_total ?? 0) > 0
-            ? track.revenue_total / track.subscribers_total
-            : null;
-          return ltv != null ? (
-            <>
-              <p className="text-sm font-semibold text-emerald-400">${ltv.toFixed(2)}</p>
-              <p className="text-[10px] text-zinc-500 mt-0.5">${track!.revenue_total!.toFixed(0)} total</p>
-            </>
-          ) : (
-            <>
-              <p className="text-sm font-semibold text-zinc-600">—</p>
-              <p className="text-[10px] text-zinc-700 mt-0.5">no OF data</p>
-            </>
-          );
-        })()}
-      </td>
-
-      {/* Détails */}
-      <td className="px-3 py-3">
-        <Link
-          href={`/accounts/${account.id}`}
-          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-xs text-zinc-300 hover:text-white transition-colors font-medium"
-        >
-          Détails
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-3 h-3">
-            <path d="M5 12h14M12 5l7 7-7 7"/>
-          </svg>
-        </Link>
-      </td>
-    </tr>
-  );
-}
-
-// ─────────────────────────────────────────────────────────────
 // Main Page
 // ─────────────────────────────────────────────────────────────
-const PERIOD_LABELS: Record<Period, string> = {
-  today: "Today",
-  yesterday: "Yesterday",
-  week: "This week",
-  month: "This month",
-  inception: "Depuis inception",
-};
-
 export default function PerformancePage() {
-  const [period, setPeriod] = useState<Period>("week");
-  const [selectedModelId, setSelectedModelId] = useState<string | null>(null);
-  const [data, setData] = useState<FunnelData | null>(null);
+  const { profile } = useAuth();
+
+  // Restore period from localStorage
+  const [period, setPeriod] = useState<Period>(() => {
+    if (typeof window === "undefined") return "week";
+    return (localStorage.getItem(LS_PERIOD_KEY) as Period) ?? "week";
+  });
+
+  const [availableAccounts, setAvailableAccounts] = useState<IgAvailableAccount[]>([]);
+  const [data, setData] = useState<Record<string, IgAccountData>>({});
   const [loading, setLoading] = useState(true);
-  const [collecting, setCollecting] = useState(false);
-  const [collectMsg, setCollectMsg] = useState<string | null>(null);
-  const [collectSources, setCollectSources] = useState<Set<string>>(new Set(["gms", "ofapi", "instagram"]));
-  const [collectOpen, setCollectOpen] = useState(false);
-  const collectRef = useRef<HTMLDivElement>(null);
-  const abortRef = useRef<AbortController | null>(null);
+  const [loadingData, setLoadingData] = useState(false);
 
-  // Close dropdown on outside click
-  useEffect(() => {
-    function onClickOutside(e: MouseEvent) {
-      if (collectRef.current && !collectRef.current.contains(e.target as Node)) {
-        setCollectOpen(false);
-      }
-    }
-    document.addEventListener("mousedown", onClickOutside);
-    return () => document.removeEventListener("mousedown", onClickOutside);
-  }, []);
+  // Restore selected accounts from localStorage
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => {
+    if (typeof window === "undefined") return new Set();
+    try {
+      const saved = localStorage.getItem(LS_ACCOUNTS_KEY);
+      if (saved) return new Set(JSON.parse(saved) as string[]);
+    } catch { /* ignore */ }
+    return new Set();
+  });
 
-  function toggleSource(s: string) {
-    setCollectSources((prev) => {
-      const next = new Set(prev);
-      if (next.has(s)) { if (next.size > 1) next.delete(s); }
-      else next.add(s);
-      return next;
+  // Color assignment per account (stable)
+  const colorMap = useMemo(() => {
+    const map = new Map<string, string>();
+    availableAccounts.forEach((a, i) => {
+      map.set(a.id, ACCOUNT_COLORS[i % ACCOUNT_COLORS.length]);
     });
-  }
+    return map;
+  }, [availableAccounts]);
 
-  const load = useCallback(async (p: Period) => {
-    if (abortRef.current) abortRef.current.abort();
-    abortRef.current = new AbortController();
-    setLoading(true);
-    try {
-      const res = await fetch(`/api/performance/funnel?period=${p}`, { signal: abortRef.current.signal });
-      if (res.ok) {
-        const json = await res.json();
-        setData({ accounts: json.accounts ?? [], models: json.models ?? [], period: json.period ?? p });
-      }
-    } catch {
-      // aborted or error
-    } finally {
-      setLoading(false);
-    }
+  // Fetch available accounts on mount
+  useEffect(() => {
+    fetch(`/api/performance/instagram?period=${period}`)
+      .then((r) => r.json())
+      .then((json: IgPerformanceResponse) => {
+        const accs = json.available_accounts ?? [];
+        setAvailableAccounts(accs);
+        // If no saved selection, select all by default
+        setSelectedIds((prev) => {
+          if (prev.size > 0) {
+            // Filter to only keep valid IDs
+            const valid = new Set([...prev].filter((id) => accs.some((a) => a.id === id)));
+            return valid.size > 0 ? valid : new Set(accs.map((a) => a.id));
+          }
+          return new Set(accs.map((a) => a.id));
+        });
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  useEffect(() => { load(period); }, [period, load]);
+  // Fetch data when selected accounts or period change
+  useEffect(() => {
+    if (availableAccounts.length === 0) return;
+    if (selectedIds.size === 0) { setData({}); return; }
 
-  const handleCollect = async () => {
-    setCollecting(true);
-    setCollectMsg(null);
-    try {
-      const res = await fetch("/api/collect/daily", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sources: [...collectSources] }),
-      });
-      const json = await res.json();
-      if (res.ok) {
-        const parts = [];
-        if (collectSources.has("gms")) parts.push(`GMS: ${json.gms_accounts_collected ?? 0}`);
-        if (collectSources.has("ofapi")) parts.push(`OF: ${json.tracking_accounts_collected ?? 0}`);
-        if (collectSources.has("instagram")) parts.push(`IG: ${json.apify_posts_saved ?? 0} posts`);
-        setCollectMsg(`Collecte terminée — ${parts.join(", ")}`);
-        load(period);
-      } else {
-        setCollectMsg(json.error ?? "Erreur lors de la collecte");
-      }
-    } catch {
-      setCollectMsg("Erreur réseau");
-    } finally {
-      setCollecting(false);
-    }
+    const ids = [...selectedIds].join(",");
+    setLoadingData(true);
+    fetch(`/api/performance/instagram?period=${period}&ids=${ids}`)
+      .then((r) => r.json())
+      .then((json: IgPerformanceResponse) => {
+        setData(json.data ?? {});
+      })
+      .finally(() => setLoadingData(false));
+  }, [period, selectedIds, availableAccounts.length]);
+
+  const handlePeriodChange = (p: string) => {
+    setPeriod(p as Period);
+    localStorage.setItem(LS_PERIOD_KEY, p);
   };
 
-  // Filter by model
-  const accounts = selectedModelId
-    ? (data?.accounts ?? []).filter((a) => a.model?.id === selectedModelId)
-    : (data?.accounts ?? []);
+  const toggleAccount = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        if (next.size > 1) next.delete(id);
+      } else {
+        next.add(id);
+      }
+      localStorage.setItem(LS_ACCOUNTS_KEY, JSON.stringify([...next]));
+      return next;
+    });
+  };
 
-  // Aggregate KPIs
-  const isInception = period === "inception";
-  const totalFollowers = accounts.reduce((s, a) => s + (a.instagram.followers_current ?? 0), 0);
-  const totalViews = accounts.reduce((s, a) => s + (a.instagram.views_delta ?? 0), 0);
-  const hasViewData = accounts.some((a) => a.instagram.views_delta != null);
+  // Build chart lines from selected accounts
+  const selectedAccountData = [...selectedIds]
+    .map((id) => data[id])
+    .filter(Boolean) as IgAccountData[];
 
-  // GMS = null for inception (no full historical data available)
-  const hasGmsData = !isInception && accounts.some((a) => a.gms != null);
-  const totalBioClicks = hasGmsData
-    ? accounts.reduce((s, a) => s + (a.gms?.clicks ?? 0), 0)
-    : 0;
+  const followerLines: LineData[] = selectedAccountData.map((a) => ({
+    accountId: a.id,
+    handle: a.instagram_handle,
+    color: colorMap.get(a.id) ?? "#3b82f6",
+    points: a.followers_history,
+  }));
 
-  // OFAPI: for inception show totals, otherwise show deltas
-  const totalTrackClicks = isInception
-    ? accounts.reduce((s, a) => s + (a.tracking?.clicks_total ?? 0), 0)
-    : accounts.reduce((s, a) => s + (a.tracking?.clicks_delta ?? 0), 0);
-  const totalSubs = isInception
-    ? accounts.reduce((s, a) => s + (a.tracking?.subscribers_total ?? 0), 0)
-    : accounts.reduce((s, a) => s + (a.tracking?.subscribers_delta ?? 0), 0);
+  const viewsLines: LineData[] = selectedAccountData
+    .filter((a) => a.views_history.length > 0)
+    .map((a) => ({
+      accountId: a.id,
+      handle: a.instagram_handle,
+      color: colorMap.get(a.id) ?? "#3b82f6",
+      points: a.views_history,
+    }));
 
-  const trackNeedsData = !isInception && accounts.some((a) => a.tracking?.needs_more_data);
+  // Collect all reels from selected accounts for the reels section
+  const reelsByAccount = selectedAccountData
+    .filter((a) => a.top_reels.length > 0)
+    .map((a) => ({ account: a, color: colorMap.get(a.id) ?? "#3b82f6" }));
 
-  // Use views as top of funnel if available, otherwise followers
-  const funnelTop = hasViewData ? totalViews : totalFollowers;
-  const funnelTopLabel = hasViewData ? "Views" : "Followers";
-  const globalBioCtr = hasGmsData && funnelTop > 0 ? (totalBioClicks / funnelTop) * 100 : null;
-  const globalTrackCtr = hasGmsData && totalBioClicks > 0 ? (totalTrackClicks / totalBioClicks) * 100 : null;
-  const globalSubRate = totalTrackClicks > 0 ? (totalSubs / totalTrackClicks) * 100 : null;
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-zinc-950 flex items-center justify-center">
+        <svg className="animate-spin w-6 h-6 text-zinc-600" viewBox="0 0 24 24" fill="none">
+          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
+        </svg>
+      </div>
+    );
+  }
 
-  // Funnel chart stages — for inception, skip Bio Clicks (N/A)
-  const chartStages: ChartStage[] = [
-    { label: funnelTopLabel, value: funnelTop, pct: 100 },
-    ...(hasGmsData ? [{ label: "Bio Clicks", value: totalBioClicks, pct: funnelTop > 0 ? (totalBioClicks / funnelTop) * 100 : 0 }] : []),
-    { label: "Track Clicks", value: totalTrackClicks, pct: funnelTop > 0 ? (totalTrackClicks / funnelTop) * 100 : 0 },
-    { label: "Subscribers", value: totalSubs, pct: funnelTop > 0 ? (totalSubs / funnelTop) * 100 : 0 },
-  ].filter((s) => s.value > 0 || s.label === funnelTopLabel);
+  if (availableAccounts.length === 0 && profile?.role !== "admin") {
+    return (
+      <div className="min-h-screen bg-zinc-950 text-white flex flex-col items-center justify-center gap-4">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-12 h-12 text-zinc-700">
+          <rect x="2" y="2" width="20" height="20" rx="5" /><path d="M8.56 2.75c4.37 6.03 6.02 9.42 8.03 17.72M4 8.75c4.34.86 7.53 1.52 8.56 2.75" />
+        </svg>
+        <h2 className="text-lg font-semibold">Aucun compte assigné</h2>
+        <p className="text-sm text-zinc-500 text-center max-w-xs">
+          Demande à un administrateur de t&apos;assigner des comptes Instagram pour voir les performances.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-zinc-950 text-white">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
 
-        {/* ── Header ───────────────────────────────────────────── */}
+        {/* ── Header ─────────────────────────────────────────────── */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
           <div>
             <h1 className="text-2xl font-bold text-white">Performance</h1>
-            <p className="text-sm text-zinc-500 mt-0.5">Funnel complet — données depuis la DB</p>
+            <p className="text-sm text-zinc-500 mt-0.5">Analytics Instagram — évolution & réels</p>
           </div>
-
           <div className="flex items-center gap-3 flex-wrap">
-            {/* Collect button — icon + dropdown */}
-            <div className="relative" ref={collectRef}>
-              <button
-                onClick={() => !collecting && setCollectOpen((v) => !v)}
-                disabled={collecting}
-                title="Collect data"
-                className="w-9 h-9 flex items-center justify-center rounded-xl border border-zinc-700 bg-zinc-900 hover:bg-zinc-800 hover:border-zinc-500 text-zinc-400 hover:text-white transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {collecting ? (
-                  <svg className="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
-                  </svg>
-                ) : (
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4">
-                    <path d="M4 4v5h5M20 20v-5h-5"/>
-                    <path d="M4 9a9 9 0 0115 0M20 15a9 9 0 01-15 0"/>
-                  </svg>
-                )}
-              </button>
-
-              {/* Dropdown */}
-              {collectOpen && !collecting && (
-                <div className="absolute right-0 top-10 z-50 w-52 bg-zinc-900 border border-zinc-700 rounded-xl shadow-xl p-3 space-y-2">
-                  <p className="text-[10px] text-zinc-500 uppercase tracking-wide font-medium px-1 pb-1">Collect sources</p>
-                  {([
-                    { key: "instagram", label: "Instagram (Apify)" },
-                    { key: "gms",       label: "GMS (Bio clicks)" },
-                    { key: "ofapi",     label: "OnlyFans (OFAPI)" },
-                  ] as const).map(({ key, label }) => (
-                    <label key={key} className="flex items-center gap-2.5 px-1 py-0.5 cursor-pointer group">
-                      <input
-                        type="checkbox"
-                        checked={collectSources.has(key)}
-                        onChange={() => toggleSource(key)}
-                        className="w-3.5 h-3.5 accent-blue-500 cursor-pointer"
-                      />
-                      <span className="text-sm text-zinc-300 group-hover:text-white transition-colors">{label}</span>
-                    </label>
-                  ))}
-                  <div className="pt-1 border-t border-zinc-800">
-                    <button
-                      onClick={() => { setCollectOpen(false); handleCollect(); }}
-                      className="w-full py-1.5 text-sm font-medium bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors"
-                    >
-                      Collect now
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Period selector */}
+            <AccountSelector
+              accounts={availableAccounts}
+              selected={selectedIds}
+              colors={colorMap}
+              onChange={toggleAccount}
+            />
             <PeriodDropdown
               value={period}
-              onChange={(v) => setPeriod(v as Period)}
+              onChange={handlePeriodChange}
               options={(["today", "yesterday", "week", "month", "inception"] as Period[]).map((p) => ({
                 key: p,
                 label: PERIOD_LABELS[p],
@@ -690,236 +593,136 @@ export default function PerformancePage() {
           </div>
         </div>
 
-        {collectMsg && (
-          <div className="mb-4 px-4 py-2 rounded-lg bg-zinc-900 border border-zinc-700 text-sm text-zinc-300">
-            {collectMsg}
-          </div>
-        )}
-
-        {/* ── Model chips ──────────────────────────────────────── */}
-        {(data?.models ?? []).length > 0 && (
+        {/* ── Selected account chips ───────────────────────────── */}
+        {availableAccounts.length > 0 && (
           <div className="flex items-center gap-2 mb-6 flex-wrap">
-            <button
-              onClick={() => setSelectedModelId(null)}
-              className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium border transition-all ${
-                selectedModelId === null
-                  ? "bg-white text-black border-white"
-                  : "bg-transparent text-zinc-400 border-zinc-700 hover:border-zinc-500 hover:text-white"
-              }`}
-            >
-              All
-            </button>
-            {(data?.models ?? []).map((m) => (
-              <button
-                key={m.id}
-                onClick={() => setSelectedModelId(m.id === selectedModelId ? null : m.id)}
-                className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium border transition-all ${
-                  selectedModelId === m.id
-                    ? "bg-blue-600 text-white border-blue-600"
-                    : "bg-transparent text-zinc-400 border-zinc-700 hover:border-zinc-500 hover:text-white"
-                }`}
-              >
-                {m.avatar_url ? (
-                  <img src={m.avatar_url} alt={m.name} className="w-5 h-5 rounded-full object-cover" />
-                ) : (
-                  <div className="w-5 h-5 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-[9px] font-bold text-white">
-                    {m.name.slice(0, 1).toUpperCase()}
-                  </div>
-                )}
-                {m.name}
-              </button>
-            ))}
+            {availableAccounts.map((account) => {
+              const isSelected = selectedIds.has(account.id);
+              const color = colorMap.get(account.id) ?? "#3b82f6";
+              return (
+                <button
+                  key={account.id}
+                  onClick={() => toggleAccount(account.id)}
+                  className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium border transition-all ${
+                    isSelected
+                      ? "text-white border-transparent"
+                      : "text-zinc-600 border-zinc-800 hover:text-zinc-400 hover:border-zinc-700"
+                  }`}
+                  style={isSelected ? { background: `${color}22`, borderColor: `${color}55` } : undefined}
+                >
+                  <div className="w-2 h-2 rounded-full shrink-0" style={{ background: isSelected ? color : "#3f3f46" }} />
+                  <IgAvatar url={account.profile_pic_url} handle={account.instagram_handle} size={18} />
+                  <span className={isSelected ? "text-white" : "text-zinc-600"}>@{account.instagram_handle}</span>
+                </button>
+              );
+            })}
           </div>
         )}
 
-        {loading ? (
-          <div className="flex items-center justify-center h-64 text-zinc-600 text-sm">
-            <svg className="animate-spin w-5 h-5 mr-2" viewBox="0 0 24 24" fill="none">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+        {loadingData ? (
+          <div className="flex items-center justify-center h-48 text-zinc-600 text-sm gap-2">
+            <svg className="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
             </svg>
-            Chargement…
+            Chargement des données…
           </div>
         ) : (
           <>
-            {/* ── KPI cards (like OF earnings) ─────────────────── */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-8">
-              <KpiCard
-                label={hasViewData ? "Views" : "Followers"}
-                value={hasViewData ? fmt(totalViews) : fmt(totalFollowers)}
-                sub={hasViewData
-                  ? `${fmt(totalFollowers)} followers au total`
-                  : "Sync un compte pour voir les vues"
-                }
-                color="bg-indigo-500/10 text-indigo-400"
-                icon={
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-5 h-5">
-                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
-                    <circle cx="12" cy="12" r="3"/>
-                  </svg>
-                }
-              />
-              <KpiCard
-                label="Bio Clicks"
-                value={isInception ? "N/A" : fmt(totalBioClicks)}
-                sub={
-                  isInception
-                    ? "No full history — use a period"
-                    : globalBioCtr != null
-                      ? `CTR ${globalBioCtr.toFixed(1)}%`
-                      : totalBioClicks === 0
-                        ? "Run a collect →"
-                        : undefined
-                }
-                color={isInception ? "bg-zinc-800/50 text-zinc-600" : "bg-sky-500/10 text-sky-400"}
-                icon={
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-5 h-5">
-                    <path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/>
-                    <path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/>
-                  </svg>
-                }
-              />
-              <KpiCard
-                label={isInception ? "Track Clicks (all-time)" : "Track Clicks"}
-                value={trackNeedsData ? "—" : fmt(totalTrackClicks)}
-                sub={
-                  trackNeedsData
-                    ? "Need 2 collects for delta"
-                    : globalTrackCtr != null
-                      ? `CTR ${globalTrackCtr.toFixed(1)}%`
-                      : isInception
-                        ? "All-time cumulative"
-                        : undefined
-                }
-                color="bg-violet-500/10 text-violet-400"
-                icon={
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-5 h-5">
-                    <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
-                  </svg>
-                }
-              />
-              <KpiCard
-                label={isInception ? "Subscribers (all-time)" : "Subscribers"}
-                value={trackNeedsData ? "—" : fmt(totalSubs)}
-                sub={
-                  trackNeedsData
-                    ? "Need 2 collects for delta"
-                    : globalSubRate != null
-                      ? `Conv. ${globalSubRate.toFixed(1)}%`
-                      : isInception
-                        ? "All-time cumulative"
-                        : undefined
-                }
-                color="bg-emerald-500/10 text-emerald-400"
-                icon={
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-5 h-5">
-                    <path d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2"/>
-                    <circle cx="9" cy="7" r="4"/>
-                    <line x1="19" y1="8" x2="19" y2="14"/>
-                    <line x1="22" y1="11" x2="16" y2="11"/>
-                  </svg>
-                }
-              />
-            </div>
-
-            {/* ── Funnel chart ─────────────────────────────────── */}
-            {totalFollowers > 0 && (
-              <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6 mb-8">
-                <div className="flex items-center justify-between mb-2">
-                  <div>
-                    <h2 className="text-sm font-semibold text-white">Conversion Rate</h2>
-                    <p className="text-3xl font-bold text-white mt-1">
-                      {pct(totalSubs, totalFollowers, 2)}
-                      {globalSubRate != null && (
-                        <span className="text-sm text-zinc-500 font-normal ml-2">follower → sub</span>
-                      )}
-                    </p>
-                  </div>
-                  <div className="text-right text-xs text-zinc-500">
-                    <p>{PERIOD_LABELS[period]}</p>
-                    {selectedModelId && data?.models.find(m => m.id === selectedModelId) && (
-                      <p className="mt-0.5 text-zinc-400">{data.models.find(m => m.id === selectedModelId)!.name}</p>
-                    )}
-                  </div>
-                </div>
-
-                {/* Stage summary row */}
-                <div className="flex gap-6 mb-6 flex-wrap">
-                  <div>
-                    <p className="text-xs text-zinc-500">{funnelTopLabel}</p>
-                    <p className="text-sm font-semibold text-white">100%</p>
-                    <p className="text-xs text-zinc-500">{fmt(funnelTop)}</p>
-                  </div>
-                  <div className="text-zinc-700 self-center">›</div>
-                  <div>
-                    <p className="text-xs text-zinc-500">Bio clicks</p>
-                    <p className="text-sm font-semibold text-white">
-                      {globalBioCtr != null ? `${globalBioCtr.toFixed(2)}%` : "—"}
-                    </p>
-                    <p className="text-xs text-zinc-500">{fmt(totalBioClicks)}</p>
-                  </div>
-                  <div className="text-zinc-700 self-center">›</div>
-                  <div>
-                    <p className="text-xs text-zinc-500">Track clicks</p>
-                    <p className="text-sm font-semibold text-white">
-                      {globalTrackCtr != null ? `${globalTrackCtr.toFixed(2)}%` : "—"}
-                    </p>
-                    <p className="text-xs text-zinc-500">{fmt(totalTrackClicks)}</p>
-                  </div>
-                  <div className="text-zinc-700 self-center">›</div>
-                  <div>
-                    <p className="text-xs text-zinc-500">Subscribers</p>
-                    <p className="text-sm font-semibold text-white">
-                      {pct(totalSubs, totalFollowers, 2)}
-                    </p>
-                    <p className="text-xs text-zinc-500">{fmt(totalSubs)}</p>
-                  </div>
-                </div>
-
-                <FunnelChart stages={chartStages} />
+            {/* ── Stats cards ──────────────────────────────────── */}
+            {selectedAccountData.length > 0 && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 mb-8">
+                {selectedAccountData.map((account) => (
+                  <AccountStatCard
+                    key={account.id}
+                    account={account}
+                    color={colorMap.get(account.id) ?? "#3b82f6"}
+                  />
+                ))}
               </div>
             )}
 
-            {/* ── Per-account table ────────────────────────────── */}
-            <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
-              <div className="px-4 py-3 border-b border-zinc-800">
-                <h2 className="text-sm font-semibold text-white">Par compte</h2>
-                <p className="text-xs text-zinc-500">{accounts.length} compte{accounts.length !== 1 ? "s" : ""} • {PERIOD_LABELS[period]}</p>
+            {/* ── Followers evolution chart ─────────────────────── */}
+            {followerLines.some((l) => l.points.length > 0) && (
+              <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6 mb-6">
+                <div className="flex items-center justify-between mb-1">
+                  <h2 className="text-sm font-semibold text-white">Évolution des abonnés</h2>
+                  <div className="flex items-center gap-3 flex-wrap">
+                    {followerLines.filter((l) => l.points.length > 0).map((l) => (
+                      <div key={l.accountId} className="flex items-center gap-1.5">
+                        <div className="w-2 h-2 rounded-full" style={{ background: l.color }} />
+                        <span className="text-[10px] text-zinc-400">@{l.handle}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <p className="text-xs text-zinc-600 mb-4">{PERIOD_LABELS[period]}</p>
+                <MultiLineChart
+                  lines={followerLines.filter((l) => l.points.length > 0)}
+                  formatY={fmt}
+                />
               </div>
+            )}
 
-              {accounts.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-16 text-zinc-600">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-10 h-10 mb-3 opacity-40">
-                    <rect x="2" y="3" width="20" height="14" rx="2"/>
-                    <path d="M8 21h8M12 17v4"/>
-                  </svg>
-                  <p className="text-sm">Aucun compte pour cette période</p>
-                  <p className="text-xs mt-1">Lance une collecte pour récupérer les données.</p>
+            {/* ── Total views evolution chart ───────────────────── */}
+            {viewsLines.some((l) => l.points.length > 0) && (
+              <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6 mb-6">
+                <div className="flex items-center justify-between mb-1">
+                  <h2 className="text-sm font-semibold text-white">Évolution des vues totales</h2>
+                  <div className="flex items-center gap-3 flex-wrap">
+                    {viewsLines.filter((l) => l.points.length > 0).map((l) => (
+                      <div key={l.accountId} className="flex items-center gap-1.5">
+                        <div className="w-2 h-2 rounded-full" style={{ background: l.color }} />
+                        <span className="text-[10px] text-zinc-400">@{l.handle}</span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b border-zinc-800 text-xs text-zinc-500 uppercase tracking-wide">
-                        <th className="px-4 py-2.5 text-left font-medium">Compte</th>
-                        <th className="px-4 py-2.5 text-right font-medium">Views période</th>
-                        <th className="px-4 py-2.5 text-right font-medium">Views totales</th>
-                        <th className="px-4 py-2.5 text-right font-medium">Bio Clicks</th>
-                        <th className="px-4 py-2.5 text-right font-medium">Track (total OF)</th>
-                        <th className="px-4 py-2.5 text-right font-medium">Subs (total OF)</th>
-                        <th className="px-4 py-2.5 text-right font-medium">LTV</th>
-                        <th className="px-3 py-2.5" />
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {accounts.map((a) => (
-                        <AccountRow key={a.id} account={a} />
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
+                <p className="text-xs text-zinc-600 mb-4">{PERIOD_LABELS[period]}</p>
+                <MultiLineChart
+                  lines={viewsLines.filter((l) => l.points.length > 0)}
+                  formatY={fmt}
+                />
+              </div>
+            )}
+
+            {/* ── Reels performance ─────────────────────────────── */}
+            {reelsByAccount.length > 0 && (
+              <div className="space-y-6">
+                {reelsByAccount.map(({ account, color }) => (
+                  <div key={account.id} className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
+                    <div className="px-5 py-3 border-b border-zinc-800 flex items-center gap-3">
+                      <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: color }} />
+                      <IgAvatar url={account.profile_pic_url} handle={account.instagram_handle} size={24} />
+                      <h3 className="text-sm font-semibold text-white">@{account.instagram_handle}</h3>
+                      <span className="text-xs text-zinc-500 ml-auto">{account.top_reels.length} reel{account.top_reels.length !== 1 ? "s" : ""} — top par vues</span>
+                    </div>
+                    <div className="p-4">
+                      <div
+                        className="grid gap-2"
+                        style={{ gridTemplateColumns: "repeat(auto-fill, minmax(100px, 1fr))" }}
+                      >
+                        {account.top_reels.slice(0, 12).map((reel) => (
+                          <ReelCard key={reel.id} reel={reel} color={color} />
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Empty state */}
+            {selectedAccountData.length === 0 && (
+              <div className="flex flex-col items-center justify-center py-20 text-zinc-600">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-10 h-10 mb-3 opacity-40">
+                  <rect x="2" y="2" width="20" height="20" rx="5" />
+                  <path d="M8.56 2.75c4.37 6.03 6.02 9.42 8.03 17.72M4 8.75c4.34.86 7.53 1.52 8.56 2.75" />
+                </svg>
+                <p className="text-sm">Aucune donnée pour la sélection</p>
+                <p className="text-xs mt-1">Sélectionne au moins un compte et lance une collecte.</p>
+              </div>
+            )}
           </>
         )}
       </div>

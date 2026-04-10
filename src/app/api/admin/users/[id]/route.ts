@@ -22,7 +22,7 @@ export async function PATCH(
   if (!adminUser) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const { id } = await params;
-  const { role, allowed_pages } = await req.json();
+  const { role, allowed_pages, assigned_instagram_account_ids } = await req.json();
 
   const adminClient = createAdminClient();
   const { error } = await adminClient
@@ -30,6 +30,7 @@ export async function PATCH(
     .update({
       role,
       allowed_pages: role === "admin" ? [] : (allowed_pages ?? []),
+      assigned_instagram_account_ids: role === "admin" ? [] : (assigned_instagram_account_ids ?? []),
       updated_at: new Date().toISOString(),
     })
     .eq("id", id);

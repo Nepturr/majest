@@ -17,6 +17,7 @@ export interface Profile {
   full_name: string | null;
   role: "admin" | "user";
   allowed_pages: string[];
+  assigned_instagram_account_ids: string[];
   created_at: string;
 }
 

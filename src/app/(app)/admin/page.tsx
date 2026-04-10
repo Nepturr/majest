@@ -10,7 +10,7 @@ import {
   Plus, Pencil, Trash2, Shield, User, Copy, Check,
   X, Loader2, AlertCircle, Users, Plug, Sparkles,
   ImageOff, Upload, FileBox, Key, CheckCircle2, RefreshCw,
-  Link, UserPlus, Unlink, ChevronRight, Smartphone,
+  Link, UserPlus, Unlink, ChevronRight, Smartphone, AtSign,
 } from "lucide-react";
 import { PhoneConfigContent } from "@/components/phone-config";
 
@@ -29,7 +29,13 @@ interface Profile {
   full_name: string | null;
   role: "admin" | "user";
   allowed_pages: string[];
+  assigned_instagram_account_ids: string[];
   created_at: string;
+}
+
+interface IgAccount {
+  id: string;
+  instagram_handle: string;
 }
 
 /* ─── Page ─── */
@@ -1093,6 +1099,7 @@ function UsersTab() {
                 <th className="text-left text-xs font-medium text-muted-foreground px-5 py-3">User</th>
                 <th className="text-left text-xs font-medium text-muted-foreground px-5 py-3">Role</th>
                 <th className="text-left text-xs font-medium text-muted-foreground px-5 py-3">Page Access</th>
+                <th className="text-left text-xs font-medium text-muted-foreground px-5 py-3">Comptes IG</th>
                 <th className="text-left text-xs font-medium text-muted-foreground px-5 py-3">Joined</th>
                 <th className="px-5 py-3" />
               </tr>
@@ -1158,6 +1165,20 @@ function UsersTab() {
                       <p className="text-[10px] text-muted-foreground mt-0.5">
                         {pageCount}/{ALL_PAGES.length} pages
                       </p>
+                    </td>
+                    <td className="px-5 py-4">
+                      {user.role === "admin" ? (
+                        <span className="text-xs text-muted-foreground">Tous</span>
+                      ) : (
+                        <span className={cn(
+                          "text-xs font-medium px-2 py-0.5 rounded-full border",
+                          (user.assigned_instagram_account_ids?.length ?? 0) > 0
+                            ? "bg-accent/10 text-accent-light border-accent/20"
+                            : "text-muted-foreground border-border"
+                        )}>
+                          {user.assigned_instagram_account_ids?.length ?? 0} compte{(user.assigned_instagram_account_ids?.length ?? 0) !== 1 ? "s" : ""}
+                        </span>
+                      )}
                     </td>
                     <td className="px-5 py-4 text-xs text-muted-foreground">
                       {new Date(user.created_at).toLocaleDateString("en-GB")}
@@ -1547,14 +1568,28 @@ function AddUserModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: 
   const [fullName, setFullName] = useState("");
   const [role, setRole] = useState<"admin" | "user">("user");
   const [allowedPages, setAllowedPages] = useState<string[]>(["dashboard"]);
+  const [assignedAccounts, setAssignedAccounts] = useState<string[]>([]);
+  const [igAccounts, setIgAccounts] = useState<IgAccount[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [created, setCreated] = useState<{ password: string } | null>(null);
   const [copied, setCopied] = useState(false);
 
+  useEffect(() => {
+    fetch("/api/admin/instagram-accounts")
+      .then((r) => r.json())
+      .then((d) => setIgAccounts((d.accounts ?? []).map((a: { id: string; instagram_handle: string }) => ({ id: a.id, instagram_handle: a.instagram_handle }))))
+      .catch(() => {});
+  }, []);
+
   const togglePage = (id: string) =>
     setAllowedPages((prev) =>
       prev.includes(id) ? prev.filter((p) => p !== id) : [...prev, id]
+    );
+
+  const toggleAccount = (id: string) =>
+    setAssignedAccounts((prev) =>
+      prev.includes(id) ? prev.filter((a) => a !== id) : [...prev, id]
     );
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -1564,7 +1599,13 @@ function AddUserModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: 
     const res = await fetch("/api/admin/users", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, full_name: fullName, role, allowed_pages: role === "admin" ? [] : allowedPages }),
+      body: JSON.stringify({
+        email,
+        full_name: fullName,
+        role,
+        allowed_pages: role === "admin" ? [] : allowedPages,
+        assigned_instagram_account_ids: role === "admin" ? [] : assignedAccounts,
+      }),
     });
     const data = await res.json();
     if (!res.ok) setError(data.error ?? "Something went wrong.");
@@ -1623,24 +1664,48 @@ function AddUserModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: 
           )}
         </Field>
         {role === "user" && (
-          <Field label="Page access">
-            <div className="space-y-2">
-              {ALL_PAGES.map((page) => {
-                const Icon = page.icon;
-                const checked = allowedPages.includes(page.id);
-                return (
-                  <label key={page.id} className={cn("flex items-center gap-3 px-3 py-2.5 rounded-lg border cursor-pointer transition-all", checked ? "bg-accent/10 border-accent/30 text-foreground" : "bg-background border-border text-muted hover:border-border-light")}>
-                    <input type="checkbox" checked={checked} onChange={() => togglePage(page.id)} className="sr-only" />
-                    <div className={cn("w-4 h-4 rounded border flex items-center justify-center shrink-0 transition-all", checked ? "bg-accent border-accent" : "border-border")}>
-                      {checked && <Check className="w-2.5 h-2.5 text-white" />}
-                    </div>
-                    <Icon className={cn("w-4 h-4 shrink-0", checked ? "text-accent" : "text-muted-foreground")} />
-                    <span className="text-sm">{page.label}</span>
-                  </label>
-                );
-              })}
-            </div>
-          </Field>
+          <>
+            <Field label="Page access">
+              <div className="space-y-2">
+                {ALL_PAGES.map((page) => {
+                  const Icon = page.icon;
+                  const checked = allowedPages.includes(page.id);
+                  return (
+                    <label key={page.id} className={cn("flex items-center gap-3 px-3 py-2.5 rounded-lg border cursor-pointer transition-all", checked ? "bg-accent/10 border-accent/30 text-foreground" : "bg-background border-border text-muted hover:border-border-light")}>
+                      <input type="checkbox" checked={checked} onChange={() => togglePage(page.id)} className="sr-only" />
+                      <div className={cn("w-4 h-4 rounded border flex items-center justify-center shrink-0 transition-all", checked ? "bg-accent border-accent" : "border-border")}>
+                        {checked && <Check className="w-2.5 h-2.5 text-white" />}
+                      </div>
+                      <Icon className={cn("w-4 h-4 shrink-0", checked ? "text-accent" : "text-muted-foreground")} />
+                      <span className="text-sm">{page.label}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            </Field>
+            {igAccounts.length > 0 && (
+              <Field label="Comptes Instagram assignés">
+                <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                  {igAccounts.map((account) => {
+                    const checked = assignedAccounts.includes(account.id);
+                    return (
+                      <label key={account.id} className={cn("flex items-center gap-3 px-3 py-2 rounded-lg border cursor-pointer transition-all", checked ? "bg-accent/10 border-accent/30 text-foreground" : "bg-background border-border text-muted hover:border-border-light")}>
+                        <input type="checkbox" checked={checked} onChange={() => toggleAccount(account.id)} className="sr-only" />
+                        <div className={cn("w-4 h-4 rounded border flex items-center justify-center shrink-0 transition-all", checked ? "bg-accent border-accent" : "border-border")}>
+                          {checked && <Check className="w-2.5 h-2.5 text-white" />}
+                        </div>
+                        <AtSign className={cn("w-3.5 h-3.5 shrink-0", checked ? "text-accent" : "text-muted-foreground")} />
+                        <span className="text-sm">@{account.instagram_handle}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+                <p className="text-[11px] text-muted-foreground mt-1">
+                  Visible sur la page Performance.
+                </p>
+              </Field>
+            )}
+          </>
         )}
         {error && (
           <div className="flex items-center gap-2 text-sm text-danger bg-danger/10 border border-danger/20 rounded-lg px-3 py-2.5">
@@ -1659,12 +1724,26 @@ function AddUserModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: 
 function EditPermissionsModal({ user, onClose, onSuccess }: { user: Profile; onClose: () => void; onSuccess: () => void }) {
   const [role, setRole] = useState<"admin" | "user">(user.role);
   const [allowedPages, setAllowedPages] = useState<string[]>(user.allowed_pages);
+  const [assignedAccounts, setAssignedAccounts] = useState<string[]>(user.assigned_instagram_account_ids ?? []);
+  const [igAccounts, setIgAccounts] = useState<IgAccount[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    fetch("/api/admin/instagram-accounts")
+      .then((r) => r.json())
+      .then((d) => setIgAccounts((d.accounts ?? []).map((a: { id: string; instagram_handle: string }) => ({ id: a.id, instagram_handle: a.instagram_handle }))))
+      .catch(() => {});
+  }, []);
 
   const togglePage = (id: string) =>
     setAllowedPages((prev) =>
       prev.includes(id) ? prev.filter((p) => p !== id) : [...prev, id]
+    );
+
+  const toggleAccount = (id: string) =>
+    setAssignedAccounts((prev) =>
+      prev.includes(id) ? prev.filter((a) => a !== id) : [...prev, id]
     );
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -1673,7 +1752,11 @@ function EditPermissionsModal({ user, onClose, onSuccess }: { user: Profile; onC
     const res = await fetch(`/api/admin/users/${user.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ role, allowed_pages: role === "admin" ? [] : allowedPages }),
+      body: JSON.stringify({
+        role,
+        allowed_pages: role === "admin" ? [] : allowedPages,
+        assigned_instagram_account_ids: role === "admin" ? [] : assignedAccounts,
+      }),
     });
     const data = await res.json();
     if (!res.ok) setError(data.error ?? "Something went wrong.");
@@ -1704,24 +1787,48 @@ function EditPermissionsModal({ user, onClose, onSuccess }: { user: Profile; onC
           </div>
         </Field>
         {role === "user" && (
-          <Field label="Page access">
-            <div className="space-y-2">
-              {ALL_PAGES.map((page) => {
-                const Icon = page.icon;
-                const checked = allowedPages.includes(page.id);
-                return (
-                  <label key={page.id} className={cn("flex items-center gap-3 px-3 py-2.5 rounded-lg border cursor-pointer transition-all", checked ? "bg-accent/10 border-accent/30 text-foreground" : "bg-background border-border text-muted hover:border-border-light")}>
-                    <input type="checkbox" checked={checked} onChange={() => togglePage(page.id)} className="sr-only" />
-                    <div className={cn("w-4 h-4 rounded border flex items-center justify-center shrink-0 transition-all", checked ? "bg-accent border-accent" : "border-border")}>
-                      {checked && <Check className="w-2.5 h-2.5 text-white" />}
-                    </div>
-                    <Icon className={cn("w-4 h-4 shrink-0", checked ? "text-accent" : "text-muted-foreground")} />
-                    <span className="text-sm">{page.label}</span>
-                  </label>
-                );
-              })}
-            </div>
-          </Field>
+          <>
+            <Field label="Page access">
+              <div className="space-y-2">
+                {ALL_PAGES.map((page) => {
+                  const Icon = page.icon;
+                  const checked = allowedPages.includes(page.id);
+                  return (
+                    <label key={page.id} className={cn("flex items-center gap-3 px-3 py-2.5 rounded-lg border cursor-pointer transition-all", checked ? "bg-accent/10 border-accent/30 text-foreground" : "bg-background border-border text-muted hover:border-border-light")}>
+                      <input type="checkbox" checked={checked} onChange={() => togglePage(page.id)} className="sr-only" />
+                      <div className={cn("w-4 h-4 rounded border flex items-center justify-center shrink-0 transition-all", checked ? "bg-accent border-accent" : "border-border")}>
+                        {checked && <Check className="w-2.5 h-2.5 text-white" />}
+                      </div>
+                      <Icon className={cn("w-4 h-4 shrink-0", checked ? "text-accent" : "text-muted-foreground")} />
+                      <span className="text-sm">{page.label}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            </Field>
+            {igAccounts.length > 0 && (
+              <Field label="Comptes Instagram assignés">
+                <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                  {igAccounts.map((account) => {
+                    const checked = assignedAccounts.includes(account.id);
+                    return (
+                      <label key={account.id} className={cn("flex items-center gap-3 px-3 py-2 rounded-lg border cursor-pointer transition-all", checked ? "bg-accent/10 border-accent/30 text-foreground" : "bg-background border-border text-muted hover:border-border-light")}>
+                        <input type="checkbox" checked={checked} onChange={() => toggleAccount(account.id)} className="sr-only" />
+                        <div className={cn("w-4 h-4 rounded border flex items-center justify-center shrink-0 transition-all", checked ? "bg-accent border-accent" : "border-border")}>
+                          {checked && <Check className="w-2.5 h-2.5 text-white" />}
+                        </div>
+                        <AtSign className={cn("w-3.5 h-3.5 shrink-0", checked ? "text-accent" : "text-muted-foreground")} />
+                        <span className="text-sm">@{account.instagram_handle}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+                <p className="text-[11px] text-muted-foreground mt-1">
+                  Les comptes assignés seront visibles sur la page Performance.
+                </p>
+              </Field>
+            )}
+          </>
         )}
         {error && (
           <div className="flex items-center gap-2 text-sm text-danger bg-danger/10 border border-danger/20 rounded-lg px-3 py-2.5">

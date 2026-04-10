@@ -43,7 +43,7 @@ export async function POST(req: NextRequest) {
   const adminUser = await verifyAdmin();
   if (!adminUser) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-  const { email, full_name, role, allowed_pages } = await req.json();
+  const { email, full_name, role, allowed_pages, assigned_instagram_account_ids } = await req.json();
 
   if (!email || !role) {
     return NextResponse.json({ error: "Email and role are required." }, { status: 400 });
@@ -69,6 +69,7 @@ export async function POST(req: NextRequest) {
     full_name: full_name || null,
     role,
     allowed_pages: role === "admin" ? [] : (allowed_pages ?? []),
+    assigned_instagram_account_ids: role === "admin" ? [] : (assigned_instagram_account_ids ?? []),
   });
 
   if (profileError) {
