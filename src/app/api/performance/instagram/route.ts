@@ -4,6 +4,25 @@ import { NextRequest, NextResponse } from "next/server";
 
 // ── Types ──────────────────────────────────────────────────────
 
+export interface IgReel {
+  id: string;
+  shortcode: string;
+  post_type: string;
+  url: string;
+  caption: string | null;
+  thumbnail_url: string | null;
+  posted_at: string | null;
+  latest_snapshot: {
+    likes_count: number | null;
+    comments_count: number | null;
+    views_count: number | null;
+    plays_count: number | null;
+  } | null;
+  views: number | null;
+  shares: number | null;
+  engagement_rate: number | null;
+}
+
 export interface IgAccountData {
   id: string;
   instagram_handle: string;
@@ -18,18 +37,7 @@ export interface IgAccountData {
   };
   followers_history: Array<{ date: string; value: number }>;
   views_history: Array<{ date: string; value: number }>;
-  top_reels: Array<{
-    id: string;
-    shortcode: string;
-    url: string;
-    thumbnail_url: string | null;
-    posted_at: string | null;
-    views: number | null;
-    likes: number | null;
-    comments: number | null;
-    shares: number | null;
-    engagement_rate: number | null;
-  }>;
+  top_reels: IgReel[];
 }
 
 export interface IgAvailableAccount {
@@ -183,7 +191,7 @@ export async function GET(req: NextRequest) {
   // ── 3. Top reels ───────────────────────────────────────────────
   const { data: posts } = await adminClient
     .from("instagram_posts")
-    .select("id, instagram_account_id, shortcode, url, thumbnail_url, posted_at, post_type")
+    .select("id, instagram_account_id, shortcode, url, thumbnail_url, posted_at, post_type, caption")
     .in("instagram_account_id", targetIds)
     .in("post_type", ["Reel", "Video"])
     .order("posted_at", { ascending: false })
@@ -239,20 +247,7 @@ export async function GET(req: NextRequest) {
     // Build reels list for this account
     const accountPosts = (posts ?? []).filter((p) => p.instagram_account_id === accountId);
 
-    interface ReelItem {
-      id: string;
-      shortcode: string;
-      url: string;
-      thumbnail_url: string | null;
-      posted_at: string | null;
-      views: number | null;
-      likes: number | null;
-      comments: number | null;
-      shares: number | null;
-      engagement_rate: number | null;
-    }
-
-    const reels: ReelItem[] = accountPosts
+    const reels: IgReel[] = accountPosts
       .map((post) => {
         const snap = latestPostSnap.get(post.id) ?? null;
         const views = snap?.views_count ?? snap?.plays_count ?? null;
@@ -262,10 +257,27 @@ export async function GET(req: NextRequest) {
         const interactions = (likes ?? 0) + (comments ?? 0);
         const engagement_rate =
           views != null && views > 0 ? (interactions / views) * 100 : null;
-        return { id: post.id, shortcode: post.shortcode, url: post.url, thumbnail_url: post.thumbnail_url, posted_at: post.posted_at, views, likes, comments, shares, engagement_rate };
+        return {
+          id: post.id,
+          shortcode: post.shortcode,
+          post_type: post.post_type as string,
+          url: post.url,
+          caption: (post as Record<string, unknown>).caption as string | null ?? null,
+          thumbnail_url: post.thumbnail_url,
+          posted_at: post.posted_at,
+          latest_snapshot: snap ? {
+            likes_count: snap.likes_count,
+            comments_count: snap.comments_count,
+            views_count: snap.views_count,
+            plays_count: snap.plays_count,
+          } : null,
+          views,
+          shares,
+          engagement_rate,
+        };
       })
       .sort((a, b) => (b.views ?? 0) - (a.views ?? 0))
-      .slice(0, 20);
+      .slice(0, 30);
 
     // Aggregate stats
     const reelsWithViews = reels.filter((r) => r.views != null);
@@ -273,15 +285,15 @@ export async function GET(req: NextRequest) {
       reelsWithViews.length > 0
         ? Math.round(reelsWithViews.reduce((s, r) => s + (r.views ?? 0), 0) / reelsWithViews.length)
         : null;
-    const reelsWithLikes = reels.filter((r) => r.likes != null);
+    const reelsWithLikes = reels.filter((r) => r.latest_snapshot?.likes_count != null);
     const avg_likes =
       reelsWithLikes.length > 0
-        ? Math.round(reelsWithLikes.reduce((s, r) => s + (r.likes ?? 0), 0) / reelsWithLikes.length)
+        ? Math.round(reelsWithLikes.reduce((s, r) => s + (r.latest_snapshot?.likes_count ?? 0), 0) / reelsWithLikes.length)
         : null;
-    const reelsWithComments = reels.filter((r) => r.comments != null);
+    const reelsWithComments = reels.filter((r) => r.latest_snapshot?.comments_count != null);
     const avg_comments =
       reelsWithComments.length > 0
-        ? Math.round(reelsWithComments.reduce((s, r) => s + (r.comments ?? 0), 0) / reelsWithComments.length)
+        ? Math.round(reelsWithComments.reduce((s, r) => s + (r.latest_snapshot?.comments_count ?? 0), 0) / reelsWithComments.length)
         : null;
 
     const handle =
