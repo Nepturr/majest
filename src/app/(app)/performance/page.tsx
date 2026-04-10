@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { PeriodDropdown } from "@/components/period-dropdown";
 import { useAuth } from "@/components/auth-provider";
 import { PostMetadataPanel } from "@/components/post-metadata-panel";
@@ -387,6 +388,20 @@ function ReelCard({ reel, color, onOpen }: { reel: IgReel; color: string; onOpen
 // ─────────────────────────────────────────────────────────────
 export default function PerformancePage() {
   const { profile } = useAuth();
+  const router = useRouter();
+
+  const canViewAccounts = profile?.role === "admin" || profile?.allowed_pages?.includes("accounts");
+
+  // fetchKey is bumped to re-trigger data fetching on back navigation (bfcache restore)
+  const [fetchKey, setFetchKey] = useState(0);
+
+  useEffect(() => {
+    const handlePageShow = (e: PageTransitionEvent) => {
+      if (e.persisted) setFetchKey((k) => k + 1);
+    };
+    window.addEventListener("pageshow", handlePageShow);
+    return () => window.removeEventListener("pageshow", handlePageShow);
+  }, []);
 
   const [period, setPeriod] = useState<Period>(() => {
     if (typeof window === "undefined") return "week";
@@ -411,6 +426,7 @@ export default function PerformancePage() {
   }, [availableAccounts]);
 
   useEffect(() => {
+    setLoading(true);
     fetch(`/api/performance/instagram?period=${period}`)
       .then((r) => r.json())
       .then((json: IgPerformanceResponse) => {
@@ -424,7 +440,7 @@ export default function PerformancePage() {
       })
       .catch(() => setLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [fetchKey]);
 
   useEffect(() => {
     if (availableAccounts.length === 0) return;
@@ -516,10 +532,12 @@ export default function PerformancePage() {
                     <div className="w-3 h-3 rounded-full shrink-0" style={{ background: color }} />
                     <IgAvatar url={account.profile_pic_url} handle={account.instagram_handle} size={28} />
                     <p className="font-semibold text-white">@{account.instagram_handle}</p>
-                    <a href={`/accounts/${account.id}`} className="ml-auto flex items-center gap-1.5 px-3 py-1 rounded-lg border border-zinc-800 hover:border-zinc-600 text-xs text-zinc-500 hover:text-white transition-all">
-                      View account
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-3 h-3"><path d="M5 12h14M12 5l7 7-7 7" /></svg>
-                    </a>
+                    {canViewAccounts && (
+                      <a href={`/accounts/${account.id}`} onClick={() => router.refresh()} className="ml-auto flex items-center gap-1.5 px-3 py-1 rounded-lg border border-zinc-800 hover:border-zinc-600 text-xs text-zinc-500 hover:text-white transition-all">
+                        View account
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-3 h-3"><path d="M5 12h14M12 5l7 7-7 7" /></svg>
+                      </a>
+                    )}
                   </div>
                   {/* Stat cards */}
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
