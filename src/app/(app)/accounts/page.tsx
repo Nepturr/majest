@@ -1138,7 +1138,7 @@ export default function AccountsPage() {
                           <div className="flex items-center gap-1 justify-end">
                             <Link
                               href={`/accounts/${account.id}`}
-                              title="Détails du compte"
+                              title="Account details"
                               className="p-1.5 rounded-lg hover:bg-accent/10 text-muted-foreground hover:text-accent-light transition-colors"
                             >
                               <BarChart2 className="w-3.5 h-3.5" />

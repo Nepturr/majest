@@ -335,7 +335,7 @@ function MiniPostCard({ post }: { post: PerfPost }) {
 }
 
 // ─────────────────────────────────────────────────────────────
-// Account Row — stats en ligne, bouton Détails
+// Account Row — per-account stats row with Details link
 // ─────────────────────────────────────────────────────────────
 function AccountRow({ account }: { account: FunnelAccount }) {
   const ig = account.instagram;
@@ -473,7 +473,7 @@ function AccountRow({ account }: { account: FunnelAccount }) {
           href={`/accounts/${account.id}`}
           className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-xs text-zinc-300 hover:text-white transition-colors font-medium"
         >
-          Détails
+          Details
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-3 h-3">
             <path d="M5 12h14M12 5l7 7-7 7"/>
           </svg>
@@ -491,7 +491,7 @@ const PERIOD_LABELS: Record<Period, string> = {
   yesterday: "Yesterday",
   week: "This week",
   month: "This month",
-  inception: "Depuis inception",
+  inception: "Since inception",
 };
 
 export default function PerformancePage() {
@@ -560,13 +560,13 @@ export default function PerformancePage() {
         if (collectSources.has("gms")) parts.push(`GMS: ${json.gms_accounts_collected ?? 0}`);
         if (collectSources.has("ofapi")) parts.push(`OF: ${json.tracking_accounts_collected ?? 0}`);
         if (collectSources.has("instagram")) parts.push(`IG: ${json.apify_posts_saved ?? 0} posts`);
-        setCollectMsg(`Collecte terminée — ${parts.join(", ")}`);
+        setCollectMsg(`Collect done — ${parts.join(", ")}`);
         load(period);
       } else {
-        setCollectMsg(json.error ?? "Erreur lors de la collecte");
+        setCollectMsg(json.error ?? "Collection error");
       }
     } catch {
-      setCollectMsg("Erreur réseau");
+      setCollectMsg("Network error");
     } finally {
       setCollecting(false);
     }
@@ -622,7 +622,7 @@ export default function PerformancePage() {
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
           <div>
             <h1 className="text-2xl font-bold text-white">Performance</h1>
-            <p className="text-sm text-zinc-500 mt-0.5">Funnel complet — données depuis la DB</p>
+            <p className="text-sm text-zinc-500 mt-0.5">Full funnel — data from DB</p>
           </div>
 
           <div className="flex items-center gap-3 flex-wrap">
@@ -738,7 +738,7 @@ export default function PerformancePage() {
               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
             </svg>
-            Chargement…
+            Loading…
           </div>
         ) : (
           <>
@@ -748,8 +748,8 @@ export default function PerformancePage() {
                 label={hasViewData ? "Views" : "Followers"}
                 value={hasViewData ? fmt(totalViews) : fmt(totalFollowers)}
                 sub={hasViewData
-                  ? `${fmt(totalFollowers)} followers au total`
-                  : "Sync un compte pour voir les vues"
+                  ? `${fmt(totalFollowers)} followers total`
+                  : "Sync an account to see views"
                 }
                 color="bg-indigo-500/10 text-indigo-400"
                 icon={
@@ -883,8 +883,8 @@ export default function PerformancePage() {
             {/* ── Per-account table ────────────────────────────── */}
             <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
               <div className="px-4 py-3 border-b border-zinc-800">
-                <h2 className="text-sm font-semibold text-white">Par compte</h2>
-                <p className="text-xs text-zinc-500">{accounts.length} compte{accounts.length !== 1 ? "s" : ""} • {PERIOD_LABELS[period]}</p>
+                <h2 className="text-sm font-semibold text-white">Per account</h2>
+                <p className="text-xs text-zinc-500">{accounts.length} account{accounts.length !== 1 ? "s" : ""} • {PERIOD_LABELS[period]}</p>
               </div>
 
               {accounts.length === 0 ? (
@@ -893,20 +893,20 @@ export default function PerformancePage() {
                     <rect x="2" y="3" width="20" height="14" rx="2"/>
                     <path d="M8 21h8M12 17v4"/>
                   </svg>
-                  <p className="text-sm">Aucun compte pour cette période</p>
-                  <p className="text-xs mt-1">Lance une collecte pour récupérer les données.</p>
+                  <p className="text-sm">No accounts for this period</p>
+                  <p className="text-xs mt-1">Run a collect to get the data.</p>
                 </div>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="border-b border-zinc-800 text-xs text-zinc-500 uppercase tracking-wide">
-                        <th className="px-4 py-2.5 text-left font-medium">Compte</th>
-                        <th className="px-4 py-2.5 text-right font-medium">Views période</th>
-                        <th className="px-4 py-2.5 text-right font-medium">Views totales</th>
+                        <th className="px-4 py-2.5 text-left font-medium">Account</th>
+                        <th className="px-4 py-2.5 text-right font-medium">Views (period)</th>
+                        <th className="px-4 py-2.5 text-right font-medium">Total views</th>
                         <th className="px-4 py-2.5 text-right font-medium">Bio Clicks</th>
-                        <th className="px-4 py-2.5 text-right font-medium">Track (total OF)</th>
-                        <th className="px-4 py-2.5 text-right font-medium">Subs (total OF)</th>
+                        <th className="px-4 py-2.5 text-right font-medium">Track (OF total)</th>
+                        <th className="px-4 py-2.5 text-right font-medium">Subs (OF total)</th>
                         <th className="px-4 py-2.5 text-right font-medium">LTV</th>
                         <th className="px-3 py-2.5" />
                       </tr>

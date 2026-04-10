@@ -68,7 +68,7 @@ function fmt(n: number | null | undefined) {
 }
 
 // ─────────────────────────────────────────────────────────────
-// PillGroup — boutons enum
+// PillGroup — enum buttons
 // ─────────────────────────────────────────────────────────────
 function PillGroup<T extends string>({
   options,
@@ -230,6 +230,26 @@ const AUDIO_TYPE_OPTIONS = [
   { value: "viral_reused", label: "Reused viral sound" },
 ] as const;
 
+// ─────────────────────────────────────────────────────────────
+// Thumbnail with proxy + onError fallback
+// ─────────────────────────────────────────────────────────────
+function ThumbnailImg({ src, className, style }: { src: string; className?: string; style?: React.CSSProperties }) {
+  const [errCount, setErrCount] = useState(0);
+  const proxied = `/api/proxy/image?url=${encodeURIComponent(src)}`;
+  if (errCount >= 2) {
+    return <div className={className} style={{ ...style, background: "#27272a" }} />;
+  }
+  return (
+    <img
+      src={errCount === 0 ? proxied : src}
+      alt=""
+      className={className}
+      style={style}
+      onError={() => setErrCount((n) => n + 1)}
+    />
+  );
+}
+
 export function PostMetadataPanel({
   post,
   onClose,
@@ -352,9 +372,8 @@ export function PostMetadataPanel({
         {/* Post preview + metrics */}
         <div className="flex items-start gap-4 px-5 py-4 border-b border-zinc-800 flex-shrink-0">
           {post.thumbnail_url ? (
-            <img
-              src={`/api/proxy/image?url=${encodeURIComponent(post.thumbnail_url)}`}
-              alt=""
+            <ThumbnailImg
+              src={post.thumbnail_url}
               className="w-16 rounded-lg object-cover flex-shrink-0"
               style={{ aspectRatio: "9/16" }}
             />

@@ -40,8 +40,8 @@ const IPHONE_DIMENSIONS: Record<string, { width: number; height: number }> = {
   "iPhone XS":         { width: 375, height: 812 },
   "iPhone XR":         { width: 414, height: 896 },
   "iPhone X":          { width: 375, height: 812 },
-  "iPhone SE (3ème gen)": { width: 375, height: 667 },
-  "iPhone SE (2ème gen)": { width: 375, height: 667 },
+  "iPhone SE (3rd gen)": { width: 375, height: 667 },
+  "iPhone SE (2nd gen)": { width: 375, height: 667 },
 };
 
 const GROUP_COLORS = [

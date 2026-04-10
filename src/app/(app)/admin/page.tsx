@@ -1099,7 +1099,7 @@ function UsersTab() {
                 <th className="text-left text-xs font-medium text-muted-foreground px-5 py-3">User</th>
                 <th className="text-left text-xs font-medium text-muted-foreground px-5 py-3">Role</th>
                 <th className="text-left text-xs font-medium text-muted-foreground px-5 py-3">Page Access</th>
-                <th className="text-left text-xs font-medium text-muted-foreground px-5 py-3">Comptes IG</th>
+                <th className="text-left text-xs font-medium text-muted-foreground px-5 py-3">IG Accounts</th>
                 <th className="text-left text-xs font-medium text-muted-foreground px-5 py-3">Joined</th>
                 <th className="px-5 py-3" />
               </tr>
@@ -1168,7 +1168,7 @@ function UsersTab() {
                     </td>
                     <td className="px-5 py-4">
                       {user.role === "admin" ? (
-                        <span className="text-xs text-muted-foreground">Tous</span>
+                        <span className="text-xs text-muted-foreground">All</span>
                       ) : (
                         <span className={cn(
                           "text-xs font-medium px-2 py-0.5 rounded-full border",
@@ -1684,7 +1684,7 @@ function AddUserModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: 
               </div>
             </Field>
             {igAccounts.length > 0 && (
-              <Field label="Comptes Instagram assignés">
+              <Field label="Assigned Instagram accounts">
                 <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
                   {igAccounts.map((account) => {
                     const checked = assignedAccounts.includes(account.id);
@@ -1701,7 +1701,7 @@ function AddUserModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: 
                   })}
                 </div>
                 <p className="text-[11px] text-muted-foreground mt-1">
-                  Visible sur la page Performance.
+                  Visible on the Performance page.
                 </p>
               </Field>
             )}
@@ -1807,7 +1807,7 @@ function EditPermissionsModal({ user, onClose, onSuccess }: { user: Profile; onC
               </div>
             </Field>
             {igAccounts.length > 0 && (
-              <Field label="Comptes Instagram assignés">
+              <Field label="Assigned Instagram accounts">
                 <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
                   {igAccounts.map((account) => {
                     const checked = assignedAccounts.includes(account.id);
@@ -1824,7 +1824,7 @@ function EditPermissionsModal({ user, onClose, onSuccess }: { user: Profile; onC
                   })}
                 </div>
                 <p className="text-[11px] text-muted-foreground mt-1">
-                  Les comptes assignés seront visibles sur la page Performance.
+                  Assigned accounts will be visible on the Performance page.
                 </p>
               </Field>
             )}
@@ -2058,7 +2058,7 @@ function ApifyKeyCard() {
               className="h-9 px-3 bg-card border border-border hover:bg-card-hover disabled:opacity-40 text-xs font-medium rounded-lg flex items-center gap-1.5 transition-colors whitespace-nowrap"
             >
               {debugging ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
-              {debugging ? "Test en cours…" : "Tester (5 réels)"}
+              {debugging ? "Testing…" : "Test (5 reels)"}
             </button>
           </div>
           {debugResult && (
