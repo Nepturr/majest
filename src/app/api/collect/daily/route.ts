@@ -343,21 +343,16 @@ async function runCollection(sources: Set<Source>) {
               profile_pic_url: profile.profilePicUrlHD ?? profile.profilePicUrl ?? null,
               apify_run_id: runId,
             });
+            // Extract latestPosts as fallback (useful when feed run returns Restricted profile)
+            const latestPosts = flattenApifyFeedItems(profile.latestPosts ?? []);
+            if (latestPosts.length) {
+              const result = await upsertPosts(adminClient, meta.accountId, runId, latestPosts);
+              apifyPostsSaved += result.postsSaved;
+            }
           } else {
             const feedItems = flattenApifyFeedItems(items);
-            // Debug: dump first item keys + values (truncated) to understand structure
-            if (items?.length) {
-              const sample = items[0] as Record<string, unknown>;
-              errors.push(`[DEBUG] feed run ${runId}: ${items.length} raw items, first item keys: ${Object.keys(sample).join(",")}`);
-              const shortCodeVal = sample.shortCode ?? sample.shortcode ?? sample.code ?? "(none)";
-              const errVal = sample.error;
-              const remVal = Array.isArray(sample.requestErrorMessages)
-                ? `[] length=${sample.requestErrorMessages.length}`
-                : String(sample.requestErrorMessages);
-              errors.push(`[DEBUG] shortCode="${shortCodeVal}" error="${errVal}" requestErrorMessages=${remVal}`);
-            }
             if (!feedItems.length) {
-              errors.push(`Apify feed run ${runId}: no valid post items after filtering`);
+              errors.push(`Apify feed run ${runId}: no valid post items (${items.length} raw)`);
             } else {
               const result = await upsertPosts(adminClient, meta.accountId, runId, feedItems);
               apifyPostsSaved += result.postsSaved;
