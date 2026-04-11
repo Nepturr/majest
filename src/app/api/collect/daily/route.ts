@@ -246,7 +246,7 @@ async function runCollection(sources: Set<Source>) {
     const accountIds = new Set<string>();
 
     // Fire profile scans + reel scans for every active account in parallel
-    await Promise.allSettled(
+    const fireResults = await Promise.allSettled(
       accounts.flatMap((account) => {
         const handle = account.instagram_handle.replace(/^@/, "");
         accountIds.add(account.id);
@@ -263,15 +263,26 @@ async function runCollection(sources: Set<Source>) {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(payload),
           });
-          if (!runRes.ok) throw new Error(`HTTP ${runRes.status}`);
+          if (!runRes.ok) {
+            const body = await runRes.text().catch(() => "");
+            throw new Error(`Apify ${mode} start HTTP ${runRes.status}: ${body.slice(0, 200)}`);
+          }
           const data = await runRes.json();
           const runId = (data?.data ?? data)?.id as string;
+          if (!runId) throw new Error(`Apify ${mode} start: no runId in response`);
           pending.set(runId, { accountId: account.id, mode });
+          return { handle, mode, runId };
         };
 
         return [fireRun("profile"), fireRun("reels")];
       })
     );
+
+    for (const result of fireResults) {
+      if (result.status === "rejected") {
+        errors.push(`Apify fire: ${result.reason}`);
+      }
+    }
 
     const deadline = Date.now() + 270_000; // 4.5 min
     const remaining = new Set(pending.keys());
