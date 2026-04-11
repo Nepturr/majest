@@ -36,7 +36,7 @@ async function getSettings(): Promise<Record<string, string>> {
   const { data } = await adminClient
     .from("settings")
     .select("key, value")
-    .in("key", ["gms_api_key", "ofapi_api_key", "apify_api_key"]);
+    .in("key", ["gms_api_key", "ofapi_api_key", "apify_api_key", "instagram_session_cookie"]);
   const r: Record<string, string> = {};
   for (const row of data ?? []) r[row.key] = row.value;
   return r;
@@ -262,14 +262,21 @@ async function runCollection(sources: Set<Source>) {
         accountIds.add(account.id);
 
         const fireRun = async (mode: "details" | "feed") => {
+          const sessionCookie = settings.instagram_session_cookie
+            ? [{ name: "sessionid", value: settings.instagram_session_cookie, domain: ".instagram.com", path: "/" }]
+            : undefined;
+
+          const basePayload = sessionCookie ? { cookies: sessionCookie } : {};
           const payload =
             mode === "feed"
               ? {
+                  ...basePayload,
                   directUrls: [profileUrl],
                   resultsType: "posts",
                   resultsLimit: 60,
                 }
               : {
+                  ...basePayload,
                   directUrls: [profileUrl],
                   resultsType: "details",
                   resultsLimit: 50,
