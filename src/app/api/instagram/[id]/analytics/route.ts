@@ -74,13 +74,22 @@ export async function GET(
   // For history charts always show last 60 data points max
   const { data: accountSnaps } = await snapQuery.limit(60);
 
-  const followers_history = (accountSnaps ?? [])
-    .filter((s) => s.followers_count != null)
-    .map((s) => ({ date: s.collected_at, value: s.followers_count as number }));
+  // Deduplicate: keep only the latest snapshot per calendar day
+  const latestSnapByDay = new Map<string, typeof accountSnaps extends Array<infer T> | null ? T : never>();
+  for (const s of accountSnaps ?? []) {
+    latestSnapByDay.set(s.collected_at.slice(0, 10), s);
+  }
+  const dedupedSnaps = [...latestSnapByDay.values()].sort((a, b) =>
+    a.collected_at < b.collected_at ? -1 : 1
+  );
 
-  const views_history = (accountSnaps ?? [])
+  const followers_history = dedupedSnaps
+    .filter((s) => s.followers_count != null)
+    .map((s) => ({ date: s.collected_at.slice(0, 10), value: s.followers_count as number }));
+
+  const views_history = dedupedSnaps
     .filter((s) => s.total_views != null)
-    .map((s) => ({ date: s.collected_at, value: s.total_views as number }));
+    .map((s) => ({ date: s.collected_at.slice(0, 10), value: s.total_views as number }));
 
   const latest = accountSnaps?.at(-1) ?? null;
   const followers_current = latest?.followers_count ?? null;
@@ -132,9 +141,18 @@ export async function GET(
 
   const { data: gmsSnaps } = await gmsQuery;
 
-  const bio_clicks_history = (gmsSnaps ?? [])
+  // Deduplicate GMS by day too
+  const latestGmsByDay = new Map<string, { total_clicks: number | null; collected_at: string }>();
+  for (const s of gmsSnaps ?? []) {
+    latestGmsByDay.set(s.collected_at.slice(0, 10), s);
+  }
+  const dedupedGms = [...latestGmsByDay.values()].sort((a, b) =>
+    a.collected_at < b.collected_at ? -1 : 1
+  );
+
+  const bio_clicks_history = dedupedGms
     .filter((s) => s.total_clicks != null)
-    .map((s) => ({ date: s.collected_at, value: s.total_clicks as number }));
+    .map((s) => ({ date: s.collected_at.slice(0, 10), value: s.total_clicks as number }));
 
   // GMS bio clicks: only available for non-inception periods (we don't have full historical data).
   // For inception, we can't know the true all-time total → mark as N/A.

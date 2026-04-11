@@ -232,11 +232,20 @@ export async function GET(req: NextRequest) {
         ? followers_current - startSnap.followers_count
         : null;
 
-    const followers_history = recentSnaps
+    // Keep only the latest snapshot per calendar day to avoid duplicate points
+    const latestSnapByDay = new Map<string, SnapRow>();
+    for (const s of recentSnaps) {
+      latestSnapByDay.set(s.collected_at.split("T")[0], s);
+    }
+    const dedupedSnaps = [...latestSnapByDay.values()].sort((a, b) =>
+      a.collected_at < b.collected_at ? -1 : 1
+    );
+
+    const followers_history = dedupedSnaps
       .filter((s) => s.followers_count != null)
       .map((s) => ({ date: s.collected_at.split("T")[0], value: s.followers_count as number }));
 
-    const views_history = recentSnaps
+    const views_history = dedupedSnaps
       .filter((s) => s.total_views != null)
       .map((s) => ({ date: s.collected_at.split("T")[0], value: s.total_views as number }));
 
