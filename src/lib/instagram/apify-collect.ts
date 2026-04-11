@@ -37,18 +37,78 @@ export interface ApifyProfile {
   latestPosts?: ApifyPost[];
 }
 
+/** True if Apify marked this dataset row as a failure (not a post). */
+export function isApifyErrorItem(item: Record<string, unknown>): boolean {
+  const err = item.error;
+  if (err === true) return true;
+  if (typeof err === "string" && err.length > 0) return true;
+  if (err != null && typeof err === "object") return true;
+  const rem = item.requestErrorMessages;
+  if (Array.isArray(rem) && rem.length > 0) return true;
+  if (typeof rem === "string" && rem.length > 0) return true;
+  if (typeof item.errorDescription === "string" && item.errorDescription.length > 0) return true;
+  return false;
+}
+
 /** Resolve shortcode from Apify item variants (actors differ slightly). */
 export function extractShortCode(post: ApifyPost | Record<string, unknown>): string | undefined {
   const p = post as Record<string, unknown>;
-  const s =
-    (typeof p.shortCode === "string" && p.shortCode) ||
-    (typeof p.shortcode === "string" && p.shortcode) ||
-    (typeof p.code === "string" && p.code) ||
-    "";
-  if (s) return s;
-  const url = typeof p.url === "string" ? p.url : "";
-  const m = url.match(/instagram\.com\/(?:p|reel|reels)\/([^/?#]+)/i);
-  return m?.[1];
+  if (typeof p.shortCode === "string" && p.shortCode) return p.shortCode;
+  if (typeof p.shortcode === "string" && p.shortcode) return p.shortcode;
+  if (typeof p.code === "string" && p.code) return p.code;
+  if (typeof p.postId === "string" && /^[A-Za-z0-9_-]{3,}$/.test(p.postId)) return p.postId;
+  const urlFields = [p.url, p.link, p.permalink].filter(
+    (x): x is string => typeof x === "string" && x.length > 0
+  );
+  for (const url of urlFields) {
+    const m =
+      url.match(/instagram\.com\/(?:p|reel|reels)\/([^/?#]+)/i) ??
+      url.match(/instagram\.com\/[^/]+\/(?:p|reel|reels)\/([^/?#]+)/i);
+    if (m?.[1]) return m[1];
+  }
+  return undefined;
+}
+
+/** Flatten dataset rows from instagram-scraper (posts / nested profile). */
+export function flattenApifyFeedItems(items: unknown[]): ApifyPost[] {
+  const out: ApifyPost[] = [];
+  const seen = new Set<string>();
+
+  const pushIfNew = (row: ApifyPost) => {
+    const sc = extractShortCode(row);
+    if (!sc || seen.has(sc)) return;
+    seen.add(sc);
+    out.push(row);
+  };
+
+  for (const raw of items) {
+    if (!raw || typeof raw !== "object") continue;
+    const item = raw as Record<string, unknown>;
+    if (isApifyErrorItem(item)) continue;
+
+    const nestedPost =
+      item.post && typeof item.post === "object" ? (item.post as ApifyPost) : null;
+    if (nestedPost && extractShortCode(nestedPost)) {
+      pushIfNew(nestedPost);
+      continue;
+    }
+
+    if (extractShortCode(item as ApifyPost)) {
+      pushIfNew(item as ApifyPost);
+      continue;
+    }
+
+    const latest = item.latestPosts;
+    if (Array.isArray(latest)) {
+      for (const lp of latest) {
+        if (lp && typeof lp === "object" && !isApifyErrorItem(lp as Record<string, unknown>)) {
+          pushIfNew(lp as ApifyPost);
+        }
+      }
+    }
+  }
+
+  return out;
 }
 
 export function mapPostType(post: ApifyPost): "Image" | "Video" | "Reel" | "Sidecar" {

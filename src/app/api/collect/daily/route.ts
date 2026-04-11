@@ -1,12 +1,7 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { NextRequest, NextResponse } from "next/server";
-import {
-  upsertPosts,
-  updateTotalViews,
-  extractShortCode,
-  type ApifyPost,
-} from "@/lib/instagram/apify-collect";
+import { upsertPosts, updateTotalViews, flattenApifyFeedItems } from "@/lib/instagram/apify-collect";
 
 export const maxDuration = 300; // 5 min pour le cron Vercel
 
@@ -349,19 +344,8 @@ async function runCollection(sources: Set<Source>) {
               apify_run_id: runId,
             });
           } else {
-            // Feed (resultsType posts): une ligne par post/reel — filtre erreurs + shortcode
-            const feedItems: ApifyPost[] = [];
-            for (const item of items as Record<string, unknown>[]) {
-              if (item.error || item.requestErrorMessages) continue;
-              if (extractShortCode(item as ApifyPost)) {
-                feedItems.push(item as ApifyPost);
-                continue;
-              }
-              const nested = item.latestPosts as unknown[] | undefined;
-              if (Array.isArray(nested) && nested.length) {
-                feedItems.push(...(nested as ApifyPost[]));
-              }
-            }
+            // Feed: ne pas utiliser `if (item.requestErrorMessages)` — [] est truthy en JS et excluait tout.
+            const feedItems = flattenApifyFeedItems(items);
             if (!feedItems.length) {
               errors.push(`Apify feed run ${runId}: no valid post items after filtering`);
             } else {
