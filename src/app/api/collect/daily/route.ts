@@ -1,7 +1,12 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { NextRequest, NextResponse } from "next/server";
-import { upsertPosts, updateTotalViews, type ApifyPost } from "@/lib/instagram/apify-collect";
+import {
+  upsertPosts,
+  updateTotalViews,
+  extractShortCode,
+  type ApifyPost,
+} from "@/lib/instagram/apify-collect";
 
 export const maxDuration = 300; // 5 min pour le cron Vercel
 
@@ -243,29 +248,39 @@ async function runCollection(sources: Set<Source>) {
     );
   }
 
-  // ── 3. Apify Instagram sync (profile + reels, fire all → poll max 270s) ─────
+  // ── 3. Apify Instagram sync (profil + fil posts, fire all → poll max 270s) ──
+  // Le scraper « reels » renvoie souvent 0 item (blocage IG) ; resultsType "posts"
+  // remonte le fil du profil (posts + reels récents) pour stats + nouveaux contenus.
   if (sources.has("instagram") && settings.apify_api_key) {
     const apifyKey = settings.apify_api_key;
     const APIFY_BASE = "https://api.apify.com/v2";
+    const PROFILE_ACTOR = "apify~instagram-scraper";
 
-    type RunMeta = { accountId: string; mode: "profile" | "reels" };
+    type RunMeta = { accountId: string; mode: "details" | "feed" };
     const pending = new Map<string, RunMeta>(); // runId → meta
     const accountIds = new Set<string>();
 
-    // Fire profile scans + reel scans for every active account in parallel
     const fireResults = await Promise.allSettled(
       accounts.flatMap((account) => {
         const handle = account.instagram_handle.replace(/^@/, "");
+        const profileUrl = `https://www.instagram.com/${handle}/`;
         accountIds.add(account.id);
 
-        const fireRun = async (mode: "profile" | "reels") => {
-          const actorId = mode === "reels" ? "apify~instagram-reel-scraper" : "apify~instagram-scraper";
+        const fireRun = async (mode: "details" | "feed") => {
           const payload =
-            mode === "reels"
-              ? { username: [handle], resultsLimit: 50 }
-              : { directUrls: [`https://www.instagram.com/${handle}/`], resultsType: "details", resultsLimit: 50 };
+            mode === "feed"
+              ? {
+                  directUrls: [profileUrl],
+                  resultsType: "posts",
+                  resultsLimit: 60,
+                }
+              : {
+                  directUrls: [profileUrl],
+                  resultsType: "details",
+                  resultsLimit: 50,
+                };
 
-          const runRes = await fetch(`${APIFY_BASE}/acts/${actorId}/runs?token=${apifyKey}`, {
+          const runRes = await fetch(`${APIFY_BASE}/acts/${PROFILE_ACTOR}/runs?token=${apifyKey}`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(payload),
@@ -282,7 +297,7 @@ async function runCollection(sources: Set<Source>) {
           return { handle, mode, runId };
         };
 
-        return [fireRun("profile"), fireRun("reels")];
+        return [fireRun("details"), fireRun("feed")];
       })
     );
 
@@ -321,9 +336,7 @@ async function runCollection(sources: Set<Source>) {
             return;
           }
 
-          if (meta.mode === "profile") {
-            // Profile scan: save follower snapshot only.
-            // latestPosts is no longer reliably returned by the actor — reels scan handles posts.
+          if (meta.mode === "details") {
             const profile = items[0];
             await adminClient.from("instagram_account_snapshots").insert({
               instagram_account_id: meta.accountId,
@@ -336,23 +349,23 @@ async function runCollection(sources: Set<Source>) {
               apify_run_id: runId,
             });
           } else {
-            // Reels scan: flatten & filter items before upserting.
-            // The actor can return error objects or profile-level objects instead of individual reels.
-            const reelItems: ApifyPost[] = [];
+            // Feed (resultsType posts): une ligne par post/reel — filtre erreurs + shortcode
+            const feedItems: ApifyPost[] = [];
             for (const item of items as Record<string, unknown>[]) {
-              if (item.error || item.requestErrorMessages) continue; // skip error items
-              if (!item.shortCode && !item.shortcode) {
-                // Profile-level object: extract latestPosts if available
-                const nested = item.latestPosts as unknown[] | undefined;
-                if (Array.isArray(nested) && nested.length) reelItems.push(...(nested as ApifyPost[]));
+              if (item.error || item.requestErrorMessages) continue;
+              if (extractShortCode(item as ApifyPost)) {
+                feedItems.push(item as ApifyPost);
                 continue;
               }
-              reelItems.push(item as ApifyPost);
+              const nested = item.latestPosts as unknown[] | undefined;
+              if (Array.isArray(nested) && nested.length) {
+                feedItems.push(...(nested as ApifyPost[]));
+              }
             }
-            if (!reelItems.length) {
-              errors.push(`Apify reels run ${runId}: no valid reel items after filtering`);
+            if (!feedItems.length) {
+              errors.push(`Apify feed run ${runId}: no valid post items after filtering`);
             } else {
-              const result = await upsertPosts(adminClient, meta.accountId, runId, reelItems);
+              const result = await upsertPosts(adminClient, meta.accountId, runId, feedItems);
               apifyPostsSaved += result.postsSaved;
               if (result.errors.length) errors.push(...result.errors.map(e => `upsert: ${e}`));
             }

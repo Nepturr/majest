@@ -37,6 +37,20 @@ export interface ApifyProfile {
   latestPosts?: ApifyPost[];
 }
 
+/** Resolve shortcode from Apify item variants (actors differ slightly). */
+export function extractShortCode(post: ApifyPost | Record<string, unknown>): string | undefined {
+  const p = post as Record<string, unknown>;
+  const s =
+    (typeof p.shortCode === "string" && p.shortCode) ||
+    (typeof p.shortcode === "string" && p.shortcode) ||
+    (typeof p.code === "string" && p.code) ||
+    "";
+  if (s) return s;
+  const url = typeof p.url === "string" ? p.url : "";
+  const m = url.match(/instagram\.com\/(?:p|reel|reels)\/([^/?#]+)/i);
+  return m?.[1];
+}
+
 export function mapPostType(post: ApifyPost): "Image" | "Video" | "Reel" | "Sidecar" {
   if (post.productType === "clips") return "Reel";
   if (post.productType === "igtv") return "Video";
@@ -156,9 +170,7 @@ export async function upsertPosts(
 
   // Batch-fetch existing thumbnail_url for all shortcodes in ONE query
   // Covers never change — once cached to Storage, we never re-download
-  const shortcodes = posts.map(
-    (p) => p.shortCode ?? (p as Record<string, unknown>).shortcode as string | undefined
-  ).filter((s): s is string => !!s);
+  const shortcodes = posts.map((p) => extractShortCode(p)).filter((s): s is string => !!s);
 
   const { data: existingRows } = await adminClient
     .from("instagram_posts")
@@ -173,7 +185,7 @@ export async function upsertPosts(
   const toCache: Array<{ id: string; shortcode: string; cdnUrl: string }> = [];
 
   for (const post of posts) {
-    const sc = post.shortCode ?? (post as Record<string, unknown>).shortcode as string | undefined;
+    const sc = extractShortCode(post);
     if (!sc) {
       errors.push(`item without shortCode: ${JSON.stringify(Object.keys(post))}`);
       continue;
