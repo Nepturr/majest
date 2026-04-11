@@ -255,57 +255,51 @@ async function runCollection(sources: Set<Source>) {
     const pending = new Map<string, RunMeta>(); // runId → meta
     const accountIds = new Set<string>();
 
-    const fireResults = await Promise.allSettled(
-      accounts.flatMap((account) => {
-        const handle = account.instagram_handle.replace(/^@/, "");
-        const profileUrl = `https://www.instagram.com/${handle}/`;
-        accountIds.add(account.id);
+    const sessionCookie = settings.instagram_session_cookie
+      ? [{ name: "sessionid", value: settings.instagram_session_cookie, domain: ".instagram.com", path: "/" }]
+      : undefined;
+    const basePayload = sessionCookie ? { cookies: sessionCookie } : {};
 
-        const fireRun = async (mode: "details" | "feed") => {
-          const sessionCookie = settings.instagram_session_cookie
-            ? [{ name: "sessionid", value: settings.instagram_session_cookie, domain: ".instagram.com", path: "/" }]
-            : undefined;
+    const startRun = async (accountId: string, handle: string, mode: "details" | "feed") => {
+      const profileUrl = `https://www.instagram.com/${handle}/`;
+      const payload =
+        mode === "feed"
+          ? { ...basePayload, directUrls: [profileUrl], resultsType: "posts", resultsLimit: 30 }
+          : { ...basePayload, directUrls: [profileUrl], resultsType: "details", resultsLimit: 1 };
 
-          const basePayload = sessionCookie ? { cookies: sessionCookie } : {};
-          const payload =
-            mode === "feed"
-              ? {
-                  ...basePayload,
-                  directUrls: [profileUrl],
-                  resultsType: "posts",
-                  resultsLimit: 60,
-                }
-              : {
-                  ...basePayload,
-                  directUrls: [profileUrl],
-                  resultsType: "details",
-                  resultsLimit: 50,
-                };
+      const runRes = await fetch(`${APIFY_BASE}/acts/${PROFILE_ACTOR}/runs?token=${apifyKey}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!runRes.ok) {
+        const body = await runRes.text().catch(() => "");
+        throw new Error(`Apify ${mode} HTTP ${runRes.status}: ${body.slice(0, 200)}`);
+      }
+      const data = await runRes.json();
+      const runId = (data?.data ?? data)?.id as string;
+      if (!runId) throw new Error(`Apify ${mode}: no runId in response`);
+      pending.set(runId, { accountId, mode });
+      apifyRunsStarted++;
+    };
 
-          const runRes = await fetch(`${APIFY_BASE}/acts/${PROFILE_ACTOR}/runs?token=${apifyKey}`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(payload),
-          });
-          if (!runRes.ok) {
-            const body = await runRes.text().catch(() => "");
-            throw new Error(`Apify ${mode} start HTTP ${runRes.status}: ${body.slice(0, 200)}`);
-          }
-          const data = await runRes.json();
-          const runId = (data?.data ?? data)?.id as string;
-          if (!runId) throw new Error(`Apify ${mode} start: no runId in response`);
-          pending.set(runId, { accountId: account.id, mode });
-          apifyRunsStarted++;
-          return { handle, mode, runId };
-        };
+    // Séquentiel avec délai entre chaque run pour éviter le rate-limiting Instagram
+    for (const account of accounts) {
+      const handle = account.instagram_handle.replace(/^@/, "");
+      accountIds.add(account.id);
 
-        return [fireRun("details"), fireRun("feed")];
-      })
-    );
+      try {
+        await startRun(account.id, handle, "details");
+        await new Promise((r) => setTimeout(r, 5_000));
+      } catch (e) {
+        errors.push(`Apify details fire ${handle}: ${e}`);
+      }
 
-    for (const result of fireResults) {
-      if (result.status === "rejected") {
-        errors.push(`Apify fire: ${result.reason}`);
+      try {
+        await startRun(account.id, handle, "feed");
+        await new Promise((r) => setTimeout(r, 5_000));
+      } catch (e) {
+        errors.push(`Apify feed fire ${handle}: ${e}`);
       }
     }
 
