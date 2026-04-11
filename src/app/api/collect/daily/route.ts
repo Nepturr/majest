@@ -1,7 +1,7 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { NextRequest, NextResponse } from "next/server";
-import { upsertPosts, updateTotalViews } from "@/lib/instagram/apify-collect";
+import { upsertPosts, updateTotalViews, type ApifyPost } from "@/lib/instagram/apify-collect";
 
 export const maxDuration = 300; // 5 min pour le cron Vercel
 
@@ -338,16 +338,16 @@ async function runCollection(sources: Set<Source>) {
           } else {
             // Reels scan: flatten & filter items before upserting.
             // The actor can return error objects or profile-level objects instead of individual reels.
-            const reelItems: unknown[] = [];
+            const reelItems: ApifyPost[] = [];
             for (const item of items as Record<string, unknown>[]) {
               if (item.error || item.requestErrorMessages) continue; // skip error items
               if (!item.shortCode && !item.shortcode) {
                 // Profile-level object: extract latestPosts if available
                 const nested = item.latestPosts as unknown[] | undefined;
-                if (Array.isArray(nested) && nested.length) reelItems.push(...nested);
+                if (Array.isArray(nested) && nested.length) reelItems.push(...(nested as ApifyPost[]));
                 continue;
               }
-              reelItems.push(item);
+              reelItems.push(item as ApifyPost);
             }
             if (!reelItems.length) {
               errors.push(`Apify reels run ${runId}: no valid reel items after filtering`);
