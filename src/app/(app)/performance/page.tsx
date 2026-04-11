@@ -28,6 +28,9 @@ const ACCOUNT_COLORS = [
   "#84cc16", "#a855f7", "#14b8a6", "#fb923c",
 ];
 
+type PerfSortKey = "views" | "likes" | "shares" | "engagement" | "comments" | "recent";
+type PerfFilterType = "all" | "reels" | "carousels";
+
 const LS_PERIOD_KEY = "perf_ig_period";
 const LS_ACCOUNTS_KEY = "perf_ig_selected_accounts";
 
@@ -419,6 +422,9 @@ export default function PerformancePage() {
   const [activeMetaPost, setActiveMetaPost] = useState<PostForPanel | null>(null);
   const [metaMap, setMetaMap] = useState<Map<string, PostMetadata>>(new Map());
 
+  const [sort, setSort] = useState<PerfSortKey>("views");
+  const [filter, setFilter] = useState<PerfFilterType>("all");
+
   const colorMap = useMemo(() => {
     const map = new Map<string, string>();
     availableAccounts.forEach((a, i) => map.set(a.id, ACCOUNT_COLORS[i % ACCOUNT_COLORS.length]));
@@ -597,9 +603,75 @@ export default function PerformancePage() {
               </div>
             )}
 
+            {/* Sort / filter bar */}
+            {selectedAccountData.some((a) => a.top_reels.length > 0) && (() => {
+              const allReels = selectedAccountData.flatMap((a) => a.top_reels);
+              const reelCount = allReels.filter((r) => r.post_type === "Reel" || r.post_type === "Video").length;
+              const carouselCount = allReels.filter((r) => r.post_type === "Sidecar").length;
+              const filterOptions: { key: PerfFilterType; label: string; count: number }[] = [
+                { key: "all", label: "All", count: allReels.length },
+                { key: "reels", label: "Reels", count: reelCount },
+                { key: "carousels", label: "Carousels", count: carouselCount },
+              ];
+              const sortOptions: { key: PerfSortKey; label: string }[] = [
+                { key: "views", label: "Unique Views" },
+                { key: "likes", label: "Likes" },
+                { key: "shares", label: "Shares" },
+                { key: "engagement", label: "ER" },
+                { key: "comments", label: "Comments" },
+                { key: "recent", label: "Recent" },
+              ];
+              return (
+                <div className="flex flex-wrap items-center justify-between gap-3 mb-5 px-1">
+                  {/* Type filters */}
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {filterOptions.map((o) => (
+                      <button key={o.key} onClick={() => setFilter(o.key)}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${filter === o.key ? "bg-zinc-700 text-white" : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/60"}`}>
+                        {o.key === "reels" && <Film className="w-3 h-3" />}
+                        {o.key === "carousels" && <Share2 className="w-3 h-3" />}
+                        {o.label}
+                        <span className={`px-1.5 py-0.5 rounded text-[10px] ${filter === o.key ? "bg-zinc-600 text-zinc-200" : "bg-zinc-800 text-zinc-600"}`}>{o.count}</span>
+                      </button>
+                    ))}
+                  </div>
+                  {/* Sort options */}
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="text-[10px] text-zinc-600 uppercase tracking-wide font-medium mr-1">Sort</span>
+                    {sortOptions.map((o) => (
+                      <button key={o.key} onClick={() => setSort(o.key)}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${sort === o.key ? "bg-zinc-700 text-white" : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/60"}`}>
+                        {o.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
+
             {/* Reels grid per account */}
             {selectedAccountData.filter((a) => a.top_reels.length > 0).map((account) => {
               const color = colorMap.get(account.id) ?? "#3b82f6";
+
+              const filtered = account.top_reels.filter((r) => {
+                if (filter === "reels") return r.post_type === "Reel" || r.post_type === "Video";
+                if (filter === "carousels") return r.post_type === "Sidecar";
+                return true;
+              });
+
+              const sorted = [...filtered].sort((a, b) => {
+                switch (sort) {
+                  case "likes":      return (b.latest_snapshot?.likes_count ?? 0) - (a.latest_snapshot?.likes_count ?? 0);
+                  case "comments":   return (b.latest_snapshot?.comments_count ?? 0) - (a.latest_snapshot?.comments_count ?? 0);
+                  case "shares":     return (b.shares ?? 0) - (a.shares ?? 0);
+                  case "engagement": return (b.engagement_rate ?? 0) - (a.engagement_rate ?? 0);
+                  case "recent":     return new Date(b.posted_at ?? 0).getTime() - new Date(a.posted_at ?? 0).getTime();
+                  default:           return (b.views ?? 0) - (a.views ?? 0);
+                }
+              });
+
+              if (sorted.length === 0) return null;
+
               return (
                 <div key={account.id} className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden mb-6">
                   <div className="px-5 py-4 border-b border-zinc-800 flex items-center gap-3">
@@ -607,12 +679,12 @@ export default function PerformancePage() {
                     <IgAvatar url={account.profile_pic_url} handle={account.instagram_handle} size={28} />
                     <div className="flex-1 min-w-0">
                       <h3 className="text-sm font-semibold text-white">@{account.instagram_handle}</h3>
-                      <p className="text-[11px] text-zinc-500">{account.top_reels.length} reel{account.top_reels.length !== 1 ? "s" : ""} — sorted by views</p>
+                      <p className="text-[11px] text-zinc-500">{sorted.length} post{sorted.length !== 1 ? "s" : ""}</p>
                     </div>
                   </div>
                   <div className="p-5">
                     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
-                      {account.top_reels.map((reel) => (
+                      {sorted.map((reel) => (
                         <ReelCard key={reel.id} reel={reel} color={color} onOpen={handleOpenReel} />
                       ))}
                     </div>
