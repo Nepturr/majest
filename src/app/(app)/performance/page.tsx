@@ -422,7 +422,7 @@ export default function PerformancePage() {
   const [activeMetaPost, setActiveMetaPost] = useState<PostForPanel | null>(null);
   const [metaMap, setMetaMap] = useState<Map<string, PostMetadata>>(new Map());
 
-  const [sort, setSort] = useState<PerfSortKey>("views");
+  const [sort, setSort] = useState<PerfSortKey>("recent");
   const [filter, setFilter] = useState<PerfFilterType>("all");
 
   const colorMap = useMemo(() => {
