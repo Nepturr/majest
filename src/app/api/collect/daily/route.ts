@@ -344,8 +344,18 @@ async function runCollection(sources: Set<Source>) {
               apify_run_id: runId,
             });
           } else {
-            // Feed: ne pas utiliser `if (item.requestErrorMessages)` — [] est truthy en JS et excluait tout.
             const feedItems = flattenApifyFeedItems(items);
+            // Debug: dump first item keys + values (truncated) to understand structure
+            if (items?.length) {
+              const sample = items[0] as Record<string, unknown>;
+              errors.push(`[DEBUG] feed run ${runId}: ${items.length} raw items, first item keys: ${Object.keys(sample).join(",")}`);
+              const shortCodeVal = sample.shortCode ?? sample.shortcode ?? sample.code ?? "(none)";
+              const errVal = sample.error;
+              const remVal = Array.isArray(sample.requestErrorMessages)
+                ? `[] length=${sample.requestErrorMessages.length}`
+                : String(sample.requestErrorMessages);
+              errors.push(`[DEBUG] shortCode="${shortCodeVal}" error="${errVal}" requestErrorMessages=${remVal}`);
+            }
             if (!feedItems.length) {
               errors.push(`Apify feed run ${runId}: no valid post items after filtering`);
             } else {
