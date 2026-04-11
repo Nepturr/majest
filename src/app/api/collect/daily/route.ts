@@ -99,7 +99,14 @@ async function runCollection(sources: Set<Source>) {
   let gmsCollected = 0;
   let trackingCollected = 0;
   let apifyPostsSaved = 0;
+  let apifyRunsStarted = 0;
+  let apifyRunsTimedOut = 0;
   const errors: string[] = [];
+
+  // Diagnostic: log which settings keys are present (values redacted)
+  const settingsPresent = Object.entries(settings)
+    .filter(([, v]) => !!v)
+    .map(([k]) => k);
   const details: Record<string, string[]> = {};
 
   // ── 1. GMS overview snapshot ─────────────────────────────────
@@ -271,6 +278,7 @@ async function runCollection(sources: Set<Source>) {
           const runId = (data?.data ?? data)?.id as string;
           if (!runId) throw new Error(`Apify ${mode} start: no runId in response`);
           pending.set(runId, { accountId: account.id, mode });
+          apifyRunsStarted++;
           return { handle, mode, runId };
         };
 
@@ -333,6 +341,8 @@ async function runCollection(sources: Set<Source>) {
       }));
     }
 
+    apifyRunsTimedOut = remaining.size;
+
     // Update total_views for every account after all scans
     await Promise.allSettled(
       [...accountIds].map((accountId) => updateTotalViews(adminClient, accountId))
@@ -344,6 +354,9 @@ async function runCollection(sources: Set<Source>) {
     gms_collected: gmsCollected,
     tracking_collected: trackingCollected,
     apify_posts_saved: apifyPostsSaved,
+    apify_runs_started: apifyRunsStarted,
+    apify_runs_timed_out: apifyRunsTimedOut,
+    settings_present: settingsPresent,
     details,
     errors: errors.length > 0 ? errors : undefined,
     collected_at: new Date().toISOString(),
