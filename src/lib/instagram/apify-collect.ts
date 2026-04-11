@@ -84,8 +84,16 @@ export function flattenApifyFeedItems(items: unknown[]): ApifyPost[] {
   for (const raw of items) {
     if (!raw || typeof raw !== "object") continue;
     const item = raw as Record<string, unknown>;
-    if (isApifyErrorItem(item)) continue;
 
+    // Hard errors: no data at all
+    const isHardError =
+      item.error === "no_items" ||
+      item.error === true ||
+      (Array.isArray(item.requestErrorMessages) && item.requestErrorMessages.length > 0);
+
+    if (isHardError) continue;
+
+    // Nested single post
     const nestedPost =
       item.post && typeof item.post === "object" ? (item.post as ApifyPost) : null;
     if (nestedPost && extractShortCode(nestedPost)) {
@@ -93,17 +101,24 @@ export function flattenApifyFeedItems(items: unknown[]): ApifyPost[] {
       continue;
     }
 
+    // Direct post item (has shortCode at root)
     if (extractShortCode(item as ApifyPost)) {
       pushIfNew(item as ApifyPost);
       continue;
     }
 
+    // Profile-level row (details or soft-error like "Restricted profile"):
+    // always try to extract latestPosts and latestIgtvVideos
     const latest = item.latestPosts;
-    if (Array.isArray(latest)) {
+    if (Array.isArray(latest) && latest.length > 0) {
       for (const lp of latest) {
-        if (lp && typeof lp === "object" && !isApifyErrorItem(lp as Record<string, unknown>)) {
-          pushIfNew(lp as ApifyPost);
-        }
+        if (lp && typeof lp === "object") pushIfNew(lp as ApifyPost);
+      }
+    }
+    const igtv = item.latestIgtvVideos;
+    if (Array.isArray(igtv) && igtv.length > 0) {
+      for (const v of igtv) {
+        if (v && typeof v === "object") pushIfNew(v as ApifyPost);
       }
     }
   }
