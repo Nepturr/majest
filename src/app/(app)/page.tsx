@@ -333,7 +333,7 @@ export default function DashboardPage() {
               accent="blue"
             />
             <StatCard
-              label="Total Views"
+              label="Total Unique Views"
               value={fmt(data.total_views)}
               deltaVal={data.total_views_delta}
               icon={<Eye className="w-3 h-3" />}
@@ -380,8 +380,8 @@ export default function DashboardPage() {
             <div className="bg-zinc-900/60 border border-zinc-800 rounded-2xl p-5">
               <div className="flex items-center justify-between mb-4">
                 <div>
-                  <p className="text-sm font-semibold text-white">Views</p>
-                  <p className="text-xs text-zinc-500 mt-0.5">Daily views across all accounts</p>
+                  <p className="text-sm font-semibold text-white">Unique Views</p>
+                  <p className="text-xs text-zinc-500 mt-0.5">Daily unique views across all accounts</p>
                 </div>
                 <span className="text-xs font-mono text-zinc-500 bg-zinc-800/60 px-2 py-1 rounded-lg">
                   {PERIODS.find((p) => p.key === period)?.label}
@@ -462,7 +462,7 @@ export default function DashboardPage() {
                   <Users className="w-4 h-4 text-blue-400" />
                   Top Accounts
                 </p>
-                <span className="text-xs text-zinc-500">by total views</span>
+                <span className="text-xs text-zinc-500">by total unique views</span>
               </div>
               <div className="space-y-2">
                 {data.top_accounts.length === 0 ? (

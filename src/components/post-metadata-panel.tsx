@@ -388,7 +388,7 @@ export function PostMetadataPanel({
             )}
             <div className="grid grid-cols-2 gap-1.5">
               {[
-                { label: "Views", value: fmt(views) },
+                { label: "Unique Views", value: fmt(views) },
                 { label: "Likes", value: fmt(snap?.likes_count) },
                 { label: "Comments", value: fmt(snap?.comments_count) },
                 {

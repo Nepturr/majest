@@ -601,7 +601,7 @@ export default function PerformancePage() {
 
   // Use views as top of funnel if available, otherwise followers
   const funnelTop = hasViewData ? totalViews : totalFollowers;
-  const funnelTopLabel = hasViewData ? "Views" : "Followers";
+  const funnelTopLabel = hasViewData ? "Unique Views" : "Followers";
   const globalBioCtr = hasGmsData && funnelTop > 0 ? (totalBioClicks / funnelTop) * 100 : null;
   const globalTrackCtr = hasGmsData && totalBioClicks > 0 ? (totalTrackClicks / totalBioClicks) * 100 : null;
   const globalSubRate = totalTrackClicks > 0 ? (totalSubs / totalTrackClicks) * 100 : null;
@@ -745,7 +745,7 @@ export default function PerformancePage() {
             {/* ── KPI cards (like OF earnings) ─────────────────── */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-8">
               <KpiCard
-                label={hasViewData ? "Views" : "Followers"}
+                label={hasViewData ? "Unique Views" : "Followers"}
                 value={hasViewData ? fmt(totalViews) : fmt(totalFollowers)}
                 sub={hasViewData
                   ? `${fmt(totalFollowers)} followers total`

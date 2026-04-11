@@ -541,7 +541,7 @@ export default function PerformancePage() {
                   </div>
                   {/* Stat cards */}
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
-                    <StatCard label="Views" value={fmt(s.avg_views != null ? (s.avg_views * s.total_reels) : null)}
+                    <StatCard label="Unique Views" value={fmt(s.avg_views != null ? (s.avg_views * s.total_reels) : null)}
                       sub={s.total_reels > 0 ? `${s.total_reels} posts in DB` : null}
                       icon={<Eye className="w-3 h-3" />} accent="blue"
                       chart={vHistory.length >= 2 ? <AreaChart data={vHistory} color="#3b82f6" height={40} gradId={`vc-${account.id}`} /> : undefined} />
@@ -549,7 +549,7 @@ export default function PerformancePage() {
                       sub={s.followers_delta != null ? `${s.followers_delta > 0 ? "+" : ""}${fmt(s.followers_delta)} ${periodLabel}` : null}
                       icon={<Users className="w-3 h-3" />} accent="violet"
                       chart={fHistory.length >= 2 ? <AreaChart data={fHistory} color="#8b5cf6" height={40} gradId={`fc-${account.id}`} formatValue={(v) => v.toLocaleString()} /> : undefined} />
-                    <StatCard label="Avg Views / reel" value={fmt(s.avg_views)}
+                    <StatCard label="Avg Unique Views / reel" value={fmt(s.avg_views)}
                       sub={s.total_reels > 0 ? `on ${s.total_reels} reels` : null}
                       icon={<Eye className="w-3 h-3" />} accent="cyan" />
                     <StatCard label="Avg Likes / reel" value={fmt(s.avg_likes)}

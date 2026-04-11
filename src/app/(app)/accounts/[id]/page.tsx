@@ -542,7 +542,7 @@ function ReelCard({ post, metaMap, onOpenMeta }: {
 // Sort / Type options
 // ─────────────────────────────────────────────────────────────
 const SORT_OPTIONS: { key: SortKey; label: string }[] = [
-  { key: "views",      label: "Views" },
+  { key: "views",      label: "Unique Views" },
   { key: "likes",      label: "Likes" },
   { key: "shares",     label: "Shares" },
   { key: "engagement", label: "ER" },
@@ -817,7 +817,7 @@ export default function AccountDetailPage() {
         ) : (
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <StatCard
-              label="Views"
+              label="Unique Views"
               value={fmt(st?.views_delta ?? st?.views_total)}
               sub={period !== "inception" && st?.views_delta != null ? `of ${fmt(st.views_total)} total` : null}
               icon={<Eye className="w-3 h-3" />}
@@ -872,7 +872,7 @@ export default function AccountDetailPage() {
               accent="amber"
             />
             <StatCard
-              label="Avg Views"
+              label="Avg Unique Views"
               value={fmt(avgViews)}
               sub={`${posts.length} posts in DB`}
               icon={<Eye className="w-3 h-3" />}
@@ -960,7 +960,7 @@ export default function AccountDetailPage() {
               );
               return (
                   <div className="space-y-2.5">
-                  {bar("Views", views, "bg-blue-600")}
+                  {bar("Unique Views", views, "bg-blue-600")}
                   {bio != null && bio > 0 && bar("Bio Clicks", bio, "bg-indigo-500")}
                   {track > 0 && bar("Track Clicks", track, "bg-violet-500")}
                   {subs > 0 && bar("Subscribers", subs, "bg-emerald-500")}
