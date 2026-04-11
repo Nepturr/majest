@@ -311,9 +311,15 @@ async function runCollection(sources: Set<Source>) {
           const itemsRes = await fetch(
             `${APIFY_BASE}/datasets/${run.defaultDatasetId}/items?token=${apifyKey}&format=json&limit=500`
           );
-          if (!itemsRes.ok) return;
+          if (!itemsRes.ok) {
+            errors.push(`Apify dataset fetch ${runId}: HTTP ${itemsRes.status}`);
+            return;
+          }
           const items = await itemsRes.json();
-          if (!items?.length) return;
+          if (!items?.length) {
+            errors.push(`Apify ${meta.mode} run ${runId}: dataset empty (0 items)`);
+            return;
+          }
 
           if (meta.mode === "profile") {
             const profile = items[0];
@@ -328,12 +334,17 @@ async function runCollection(sources: Set<Source>) {
               apify_run_id: runId,
             });
             const posts = profile.latestPosts ?? [];
+            if (!posts.length) {
+              errors.push(`Apify profile run ${runId}: latestPosts empty`);
+            }
             const result = await upsertPosts(adminClient, meta.accountId, runId, posts);
             apifyPostsSaved += result.postsSaved;
+            if (result.errors.length) errors.push(...result.errors.map(e => `upsert: ${e}`));
           } else {
             // Reels scan
             const result = await upsertPosts(adminClient, meta.accountId, runId, items);
             apifyPostsSaved += result.postsSaved;
+            if (result.errors.length) errors.push(...result.errors.map(e => `upsert: ${e}`));
           }
         } catch (e) {
           errors.push(`Apify finalize ${runId}: ${e}`);
