@@ -322,6 +322,8 @@ async function runCollection(sources: Set<Source>) {
           }
 
           if (meta.mode === "profile") {
+            // Profile scan: save follower snapshot only.
+            // latestPosts is no longer reliably returned by the actor — reels scan handles posts.
             const profile = items[0];
             await adminClient.from("instagram_account_snapshots").insert({
               instagram_account_id: meta.accountId,
@@ -333,18 +335,27 @@ async function runCollection(sources: Set<Source>) {
               profile_pic_url: profile.profilePicUrlHD ?? profile.profilePicUrl ?? null,
               apify_run_id: runId,
             });
-            const posts = profile.latestPosts ?? [];
-            if (!posts.length) {
-              errors.push(`Apify profile run ${runId}: latestPosts empty`);
-            }
-            const result = await upsertPosts(adminClient, meta.accountId, runId, posts);
-            apifyPostsSaved += result.postsSaved;
-            if (result.errors.length) errors.push(...result.errors.map(e => `upsert: ${e}`));
           } else {
-            // Reels scan
-            const result = await upsertPosts(adminClient, meta.accountId, runId, items);
-            apifyPostsSaved += result.postsSaved;
-            if (result.errors.length) errors.push(...result.errors.map(e => `upsert: ${e}`));
+            // Reels scan: flatten & filter items before upserting.
+            // The actor can return error objects or profile-level objects instead of individual reels.
+            const reelItems: unknown[] = [];
+            for (const item of items as Record<string, unknown>[]) {
+              if (item.error || item.requestErrorMessages) continue; // skip error items
+              if (!item.shortCode && !item.shortcode) {
+                // Profile-level object: extract latestPosts if available
+                const nested = item.latestPosts as unknown[] | undefined;
+                if (Array.isArray(nested) && nested.length) reelItems.push(...nested);
+                continue;
+              }
+              reelItems.push(item);
+            }
+            if (!reelItems.length) {
+              errors.push(`Apify reels run ${runId}: no valid reel items after filtering`);
+            } else {
+              const result = await upsertPosts(adminClient, meta.accountId, runId, reelItems);
+              apifyPostsSaved += result.postsSaved;
+              if (result.errors.length) errors.push(...result.errors.map(e => `upsert: ${e}`));
+            }
           }
         } catch (e) {
           errors.push(`Apify finalize ${runId}: ${e}`);
