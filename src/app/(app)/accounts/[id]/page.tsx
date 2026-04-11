@@ -6,7 +6,7 @@ import {
   ArrowLeft, Heart, MessageCircle, Eye, RefreshCw,
   ExternalLink, TrendingUp, Film, Image as ImageIcon,
   Layers, Play, Users, PenLine, Share2, DollarSign,
-  MousePointerClick, UserCheck, Link2,
+  MousePointerClick, UserCheck, Link2, ArrowUp, ArrowDown,
 } from "lucide-react";
 import { PostMetadataPanel, hasMetadata } from "@/components/post-metadata-panel";
 import type { PostForPanel, PostMetadata } from "@/components/post-metadata-panel";
@@ -363,6 +363,27 @@ function DonutChart({ data }: { data: Array<{ country: string; pct: number; coun
 }
 
 // ─────────────────────────────────────────────────────────────
+// Trend badge (arrow + %)
+// ─────────────────────────────────────────────────────────────
+function computeTrend(current: number | null | undefined, prev: number | null | undefined): { pct: number; up: boolean } | null {
+  if (current == null || prev == null) return null;
+  if (prev === 0) return null;
+  const pct = Math.round(((current - prev) / Math.abs(prev)) * 100);
+  return { pct: Math.abs(pct), up: pct >= 0 };
+}
+
+function TrendBadge({ current, prev }: { current: number | null | undefined; prev: number | null | undefined }) {
+  const trend = computeTrend(current, prev);
+  if (!trend) return null;
+  return (
+    <span className={`flex items-center gap-0.5 text-[10px] font-semibold ${trend.up ? "text-emerald-400" : "text-rose-400"}`}>
+      {trend.up ? <ArrowUp className="w-2.5 h-2.5" /> : <ArrowDown className="w-2.5 h-2.5" />}
+      {trend.pct}%
+    </span>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
 // Stat card
 // ─────────────────────────────────────────────────────────────
 function StatCard({
@@ -372,6 +393,8 @@ function StatCard({
   icon,
   accent = "blue",
   chart,
+  trendCurrent,
+  trendPrev,
 }: {
   label: string;
   value: string;
@@ -379,6 +402,8 @@ function StatCard({
   icon: React.ReactNode;
   accent?: "blue" | "violet" | "cyan" | "emerald" | "amber" | "indigo";
   chart?: React.ReactNode;
+  trendCurrent?: number | null;
+  trendPrev?: number | null;
 }) {
   const accents = {
     blue:    { bg: "bg-blue-600/8",    border: "border-blue-500/15",   text: "text-blue-400",    val: "text-blue-200" },
@@ -397,7 +422,10 @@ function StatCard({
           {icon}
           {label}
         </div>
-        {sub && <span className="text-[10px] text-zinc-600 shrink-0">{sub}</span>}
+        <div className="flex items-center gap-1.5 shrink-0">
+          <TrendBadge current={trendCurrent} prev={trendPrev} />
+          {sub && <span className="text-[10px] text-zinc-600">{sub}</span>}
+        </div>
       </div>
       <p className={`text-2xl font-bold leading-none ${a.val}`}>{value}</p>
       {chart && <div className="mt-1">{chart}</div>}
@@ -822,6 +850,7 @@ export default function AccountDetailPage() {
               sub={period !== "inception" && st?.views_delta != null ? `of ${fmt(st.views_total)} total` : null}
               icon={<Eye className="w-3 h-3" />}
               accent="blue"
+              trendCurrent={st?.views_delta} trendPrev={st?.views_delta_prev}
               chart={viewsChartData.length >= 2 ? <AreaChart data={viewsChartData} color="#3b82f6" height={40} gradId="vc" /> : undefined}
             />
             <StatCard
@@ -830,6 +859,7 @@ export default function AccountDetailPage() {
               sub={st?.followers_delta != null ? `${st.followers_delta > 0 ? "+" : ""}${fmt(st.followers_delta)} ${periodLabel}` : null}
               icon={<Users className="w-3 h-3" />}
               accent="violet"
+              trendCurrent={st?.followers_delta} trendPrev={st?.followers_delta_prev}
               chart={followersChartData.length >= 2
                 ? <AreaChart data={followersChartData} color="#8b5cf6" height={40} gradId="fc"
                     formatValue={(v) => v.toLocaleString()} />
@@ -841,6 +871,7 @@ export default function AccountDetailPage() {
               sub={st?.bio_clicks_na ? "No full history — use a period" : periodLabel}
               icon={<Link2 className="w-3 h-3" />}
               accent={st?.bio_clicks_na ? "blue" : "cyan"}
+              trendCurrent={st?.bio_clicks_na ? null : st?.bio_clicks} trendPrev={st?.bio_clicks_na ? null : st?.bio_clicks_prev}
               chart={!st?.bio_clicks_na && bioChartData.length >= 2 ? <BarChart data={bioChartData} color="#06b6d4" height={32} gradId="bc" /> : undefined}
             />
             <StatCard
@@ -849,6 +880,7 @@ export default function AccountDetailPage() {
               sub={st?.needs_more_data ? "Need 2+ collects" : period === "inception" ? "all-time" : periodLabel}
               icon={<MousePointerClick className="w-3 h-3" />}
               accent="indigo"
+              trendCurrent={period !== "inception" ? st?.track_clicks_delta : null} trendPrev={period !== "inception" ? st?.track_clicks_delta_prev : null}
             />
             <StatCard
               label={period === "inception" ? "Subscribers (all-time)" : "Subscribers"}
@@ -856,6 +888,7 @@ export default function AccountDetailPage() {
               sub={st?.needs_more_data ? "Need 2+ collects" : period === "inception" ? "all-time OF" : periodLabel}
               icon={<UserCheck className="w-3 h-3" />}
               accent="emerald"
+              trendCurrent={period !== "inception" ? st?.subscribers_delta : null} trendPrev={period !== "inception" ? st?.subscribers_delta_prev : null}
             />
             <StatCard
               label={period === "inception" ? "Revenue (all-time)" : "Revenue"}
@@ -863,6 +896,7 @@ export default function AccountDetailPage() {
               sub={st?.needs_more_data ? "Need 2+ collects" : period === "inception" ? "all-time OF" : periodLabel}
               icon={<DollarSign className="w-3 h-3" />}
               accent="amber"
+              trendCurrent={period !== "inception" ? st?.revenue_delta : null} trendPrev={period !== "inception" ? st?.revenue_delta_prev : null}
             />
             <StatCard
               label="LTV"

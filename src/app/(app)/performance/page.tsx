@@ -7,7 +7,7 @@ import { useAuth } from "@/components/auth-provider";
 import { PostMetadataPanel } from "@/components/post-metadata-panel";
 import type { PostForPanel, PostMetadata } from "@/components/post-metadata-panel";
 import type { IgAccountData, IgAvailableAccount, IgPerformanceResponse, IgReel } from "@/app/api/performance/instagram/route";
-import { Eye, Users, Heart, MessageCircle, Share2, TrendingUp, Film, Play, ExternalLink } from "lucide-react";
+import { Eye, Users, Heart, MessageCircle, Share2, TrendingUp, Film, Play, ExternalLink, ArrowUp, ArrowDown } from "lucide-react";
 
 // ─────────────────────────────────────────────────────────────
 // Constants
@@ -154,15 +154,38 @@ function AreaChart({
 }
 
 // ─────────────────────────────────────────────────────────────
+// Trend badge (arrow + %)
+// ─────────────────────────────────────────────────────────────
+function computeTrend(current: number | null | undefined, prev: number | null | undefined): { pct: number; up: boolean } | null {
+  if (current == null || prev == null) return null;
+  if (prev === 0) return null;
+  const pct = Math.round(((current - prev) / Math.abs(prev)) * 100);
+  return { pct: Math.abs(pct), up: pct >= 0 };
+}
+
+function TrendBadge({ current, prev }: { current: number | null | undefined; prev: number | null | undefined }) {
+  const trend = computeTrend(current, prev);
+  if (!trend) return null;
+  return (
+    <span className={`flex items-center gap-0.5 text-[10px] font-semibold ${trend.up ? "text-emerald-400" : "text-rose-400"}`}>
+      {trend.up ? <ArrowUp className="w-2.5 h-2.5" /> : <ArrowDown className="w-2.5 h-2.5" />}
+      {trend.pct}%
+    </span>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
 // Stat Card — same style as accounts/[id]
 // ─────────────────────────────────────────────────────────────
 function StatCard({
-  label, value, sub, icon, accent = "blue", chart,
+  label, value, sub, icon, accent = "blue", chart, trendCurrent, trendPrev,
 }: {
   label: string; value: string; sub?: string | null;
   icon: React.ReactNode;
   accent?: "blue" | "violet" | "cyan" | "emerald" | "amber" | "pink";
   chart?: React.ReactNode;
+  trendCurrent?: number | null;
+  trendPrev?: number | null;
 }) {
   const accents = {
     blue:    { bg: "bg-blue-600/8",    border: "border-blue-500/15",   text: "text-blue-400",    val: "text-blue-200" },
@@ -179,7 +202,10 @@ function StatCard({
         <div className={`flex items-center gap-1.5 text-[10px] uppercase tracking-wide font-medium ${a.text}`}>
           {icon}{label}
         </div>
-        {sub && <span className="text-[10px] text-zinc-600 shrink-0">{sub}</span>}
+        <div className="flex items-center gap-1.5 shrink-0">
+          <TrendBadge current={trendCurrent} prev={trendPrev} />
+          {sub && <span className="text-[10px] text-zinc-600">{sub}</span>}
+        </div>
       </div>
       <p className={`text-2xl font-bold leading-none ${a.val}`}>{value}</p>
       {chart && <div className="mt-1">{chart}</div>}
@@ -548,12 +574,12 @@ export default function PerformancePage() {
                   {/* Stat cards */}
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
                     <StatCard label="Unique Views" value={fmt(s.avg_views != null ? (s.avg_views * s.total_reels) : null)}
-                      sub={s.total_reels > 0 ? `${s.total_reels} posts in DB` : null}
                       icon={<Eye className="w-3 h-3" />} accent="blue"
                       chart={vHistory.length >= 2 ? <AreaChart data={vHistory} color="#3b82f6" height={40} gradId={`vc-${account.id}`} /> : undefined} />
                     <StatCard label="Followers" value={fmt(s.followers_current)}
                       sub={s.followers_delta != null ? `${s.followers_delta > 0 ? "+" : ""}${fmt(s.followers_delta)} ${periodLabel}` : null}
                       icon={<Users className="w-3 h-3" />} accent="violet"
+                      trendCurrent={s.followers_delta} trendPrev={s.followers_delta_prev}
                       chart={fHistory.length >= 2 ? <AreaChart data={fHistory} color="#8b5cf6" height={40} gradId={`fc-${account.id}`} formatValue={(v) => v.toLocaleString()} /> : undefined} />
                     <StatCard label="Avg Unique Views / reel" value={fmt(s.avg_views)}
                       sub={s.total_reels > 0 ? `on ${s.total_reels} reels` : null}

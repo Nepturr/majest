@@ -20,15 +20,29 @@ function periodStart(period: Period): Date | null {
   return null; // inception = no start bound
 }
 
+/** Duration in ms for a given period (null for inception) */
+function periodDurationMs(period: Period): number | null {
+  if (period === "today") return 86400_000;
+  if (period === "week") return 7 * 86400_000;
+  if (period === "month") return 30 * 86400_000;
+  return null;
+}
+
 export interface AccountAnalytics {
   period: Period;
   stats: {
     views_total: number | null;
     views_delta: number | null;
+    /** Views delta for the previous period (for % comparison) */
+    views_delta_prev: number | null;
     followers_current: number | null;
     followers_delta: number | null;
+    /** Followers delta for the previous period */
+    followers_delta_prev: number | null;
     /** Sum of daily GMS snapshots for the period. Null for "inception" (no full history). */
     bio_clicks: number | null;
+    /** Bio clicks for the previous period */
+    bio_clicks_prev: number | null;
     /** True when period = inception and GMS data is unavailable all-time */
     bio_clicks_na: boolean;
     /** All-time cumulative (always available) */
@@ -40,6 +54,10 @@ export interface AccountAnalytics {
     revenue_total: number | null;
     /** Revenue for the selected period (delta); null for inception (= revenue_total) */
     revenue_delta: number | null;
+    /** Deltas for previous period (for % comparison) */
+    track_clicks_delta_prev: number | null;
+    subscribers_delta_prev: number | null;
+    revenue_delta_prev: number | null;
     ltv: number | null;
     needs_more_data: boolean; // no period-start OFAPI snapshot yet
   };
@@ -61,6 +79,11 @@ export async function GET(
   const period = (req.nextUrl.searchParams.get("period") ?? "month") as Period;
   const start = periodStart(period);
   const startIso = start?.toISOString() ?? null;
+
+  // Previous period boundaries (null for inception)
+  const durationMs = periodDurationMs(period);
+  const prevStart = start && durationMs ? new Date(start.getTime() - durationMs) : null;
+  const prevStartIso = prevStart?.toISOString() ?? null;
 
   const adminClient = createAdminClient();
 
@@ -95,51 +118,62 @@ export async function GET(
   const followers_current = latest?.followers_count ?? null;
   const views_total = latest?.total_views ?? null;
 
-  // Followers delta
+  // Followers & views deltas — single query per period boundary
   let followers_delta: number | null = null;
-  if (startIso && followers_current != null) {
-    const { data: startSnap } = await adminClient
-      .from("instagram_account_snapshots")
-      .select("followers_count")
-      .eq("instagram_account_id", id)
-      .lte("collected_at", startIso)
-      .order("collected_at", { ascending: false })
-      .limit(1)
-      .single();
-    if (startSnap?.followers_count != null) {
-      followers_delta = followers_current - startSnap.followers_count;
-    }
-  }
-
-  // Views delta
   let views_delta: number | null = null;
-  if (startIso && views_total != null) {
-    const { data: startSnap } = await adminClient
+  let followers_delta_prev: number | null = null;
+  let views_delta_prev: number | null = null;
+
+  if (period === "inception") {
+    views_delta = views_total;
+  } else if (startIso) {
+    const { data: snapAtStart } = await adminClient
       .from("instagram_account_snapshots")
-      .select("total_views")
+      .select("followers_count, total_views")
       .eq("instagram_account_id", id)
       .lte("collected_at", startIso)
       .order("collected_at", { ascending: false })
       .limit(1)
       .single();
-    if (startSnap?.total_views != null) {
-      views_delta = views_total - startSnap.total_views;
-    } else if (period !== "inception") {
-      views_delta = null; // not enough history
+
+    if (followers_current != null && snapAtStart?.followers_count != null) {
+      followers_delta = followers_current - snapAtStart.followers_count;
     }
-  } else if (period === "inception") {
-    views_delta = views_total;
+    if (views_total != null && snapAtStart?.total_views != null) {
+      views_delta = views_total - snapAtStart.total_views;
+    }
+
+    // Previous period delta (requires snapshot at prevStartIso)
+    if (prevStartIso && snapAtStart) {
+      const { data: snapAtPrevStart } = await adminClient
+        .from("instagram_account_snapshots")
+        .select("followers_count, total_views")
+        .eq("instagram_account_id", id)
+        .lte("collected_at", prevStartIso)
+        .order("collected_at", { ascending: false })
+        .limit(1)
+        .single();
+
+      if (snapAtPrevStart?.followers_count != null && snapAtStart.followers_count != null) {
+        followers_delta_prev = snapAtStart.followers_count - snapAtPrevStart.followers_count;
+      }
+      if (snapAtPrevStart?.total_views != null && snapAtStart.total_views != null) {
+        views_delta_prev = snapAtStart.total_views - snapAtPrevStart.total_views;
+      }
+    }
   }
 
   // ── 2. Bio clicks history (gms_overview_snapshots.total_clicks per day) ─────
-  const gmsQuery = adminClient
+  // Fetch from prevStartIso so we can compute previous period comparison too
+  const gmsQueryBuilder = adminClient
     .from("gms_overview_snapshots")
     .select("total_clicks, collected_at")
     .eq("instagram_account_id", id)
-    .order("collected_at", { ascending: true })
-    .limit(60);
+    .order("collected_at", { ascending: true });
 
-  const { data: gmsSnaps } = await gmsQuery;
+  const { data: gmsSnaps } = await (prevStartIso
+    ? gmsQueryBuilder.gte("collected_at", prevStartIso)
+    : gmsQueryBuilder.limit(120));
 
   // Deduplicate GMS by day too
   const latestGmsByDay = new Map<string, { total_clicks: number | null; collected_at: string }>();
@@ -158,10 +192,17 @@ export async function GET(
   // For inception, we can't know the true all-time total → mark as N/A.
   const bio_clicks_na = period === "inception";
   let bio_clicks: number | null = null;
+  let bio_clicks_prev: number | null = null;
   if (!bio_clicks_na && startIso) {
     bio_clicks = (gmsSnaps ?? [])
       .filter((s) => s.total_clicks != null && s.collected_at >= startIso)
       .reduce((s, d) => s + (d.total_clicks ?? 0), 0) || null;
+
+    if (prevStartIso) {
+      bio_clicks_prev = (gmsSnaps ?? [])
+        .filter((s) => s.total_clicks != null && s.collected_at >= prevStartIso && s.collected_at < startIso)
+        .reduce((s, d) => s + (d.total_clicks ?? 0), 0) || null;
+    }
   }
 
   // ── 3. Country breakdown (latest snapshot with data) ───────────────────────
@@ -208,6 +249,9 @@ export async function GET(
   let track_clicks_delta: number | null = null;
   let subscribers_delta: number | null = null;
   let revenue_delta: number | null = null;
+  let track_clicks_delta_prev: number | null = null;
+  let subscribers_delta_prev: number | null = null;
+  let revenue_delta_prev: number | null = null;
   let needs_more_data = false;
 
   if (period === "inception") {
@@ -215,7 +259,7 @@ export async function GET(
     subscribers_delta = subscribers_total;
     revenue_delta = revenue_total;
   } else if (startIso && track_clicks_total != null) {
-    const { data: prevTracking } = await adminClient
+    const { data: trackingAtStart } = await adminClient
       .from("tracking_link_snapshots")
       .select("clicks_count, subscribers_count, revenue_total")
       .eq("instagram_account_id", id)
@@ -224,12 +268,32 @@ export async function GET(
       .limit(1)
       .single();
 
-    if (prevTracking) {
-      track_clicks_delta = Math.max(0, track_clicks_total - prevTracking.clicks_count);
-      subscribers_delta = Math.max(0, subscribers_total! - prevTracking.subscribers_count);
-      revenue_delta = revenue_total != null && prevTracking.revenue_total != null
-        ? Math.max(0, revenue_total - prevTracking.revenue_total)
+    if (trackingAtStart) {
+      track_clicks_delta = Math.max(0, track_clicks_total - trackingAtStart.clicks_count);
+      subscribers_delta = Math.max(0, subscribers_total! - trackingAtStart.subscribers_count);
+      revenue_delta = revenue_total != null && trackingAtStart.revenue_total != null
+        ? Math.max(0, revenue_total - trackingAtStart.revenue_total)
         : null;
+
+      // Previous period comparison
+      if (prevStartIso) {
+        const { data: trackingAtPrevStart } = await adminClient
+          .from("tracking_link_snapshots")
+          .select("clicks_count, subscribers_count, revenue_total")
+          .eq("instagram_account_id", id)
+          .lte("collected_at", prevStartIso)
+          .order("collected_at", { ascending: false })
+          .limit(1)
+          .single();
+
+        if (trackingAtPrevStart) {
+          track_clicks_delta_prev = Math.max(0, trackingAtStart.clicks_count - trackingAtPrevStart.clicks_count);
+          subscribers_delta_prev = Math.max(0, trackingAtStart.subscribers_count - trackingAtPrevStart.subscribers_count);
+          revenue_delta_prev = trackingAtStart.revenue_total != null && trackingAtPrevStart.revenue_total != null
+            ? Math.max(0, trackingAtStart.revenue_total - trackingAtPrevStart.revenue_total)
+            : null;
+        }
+      }
     } else {
       needs_more_data = true; // no snapshot before period start yet
     }
@@ -240,9 +304,12 @@ export async function GET(
     stats: {
       views_total,
       views_delta,
+      views_delta_prev,
       followers_current,
       followers_delta,
+      followers_delta_prev,
       bio_clicks,
+      bio_clicks_prev,
       bio_clicks_na,
       track_clicks_total,
       subscribers_total,
@@ -250,6 +317,9 @@ export async function GET(
       subscribers_delta,
       revenue_total,
       revenue_delta,
+      track_clicks_delta_prev,
+      subscribers_delta_prev,
+      revenue_delta_prev,
       ltv,
       needs_more_data,
     },

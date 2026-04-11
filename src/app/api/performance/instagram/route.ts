@@ -30,6 +30,8 @@ export interface IgAccountData {
   stats: {
     followers_current: number | null;
     followers_delta: number | null;
+    /** Followers delta for the previous period (for % comparison) */
+    followers_delta_prev: number | null;
     avg_views: number | null;
     avg_likes: number | null;
     avg_comments: number | null;
@@ -113,6 +115,13 @@ export async function GET(req: NextRequest) {
 
   const { start } = getPeriodRange(period);
   const startIso = start.toISOString();
+
+  // Previous period start (for % comparison)
+  const periodMs: Record<Period, number | null> = {
+    today: 86400_000, yesterday: 86400_000, week: 7 * 86400_000, month: 30 * 86400_000, inception: null,
+  };
+  const durationMs = periodMs[period];
+  const prevStartIso = durationMs ? new Date(start.getTime() - durationMs).toISOString() : null;
 
   // ── 1. Load all available accounts (scoped by role) ────────────
   let accQuery = adminClient
@@ -232,6 +241,13 @@ export async function GET(req: NextRequest) {
         ? followers_current - startSnap.followers_count
         : null;
 
+    // Previous period delta
+    const prevStartSnap = prevStartIso ? (snaps.filter((s) => s.collected_at <= prevStartIso).at(-1) ?? null) : null;
+    const followers_delta_prev =
+      startSnap?.followers_count != null && prevStartSnap?.followers_count != null
+        ? startSnap.followers_count - prevStartSnap.followers_count
+        : null;
+
     // Keep only the latest snapshot per calendar day to avoid duplicate points
     const latestSnapByDay = new Map<string, SnapRow>();
     for (const s of recentSnaps) {
@@ -315,6 +331,7 @@ export async function GET(req: NextRequest) {
       stats: {
         followers_current,
         followers_delta,
+        followers_delta_prev,
         avg_views,
         avg_likes,
         avg_comments,
