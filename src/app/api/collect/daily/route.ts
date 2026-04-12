@@ -11,15 +11,15 @@ const TIER1_3 = new Set(["USA", "GBR", "CAN", "AUS", "DEU", "FRA"]);
 const TIER1_2 = new Set(["US", "GB", "CA", "AU", "DE", "FR"]);
 
 async function isAuthorized(req: NextRequest): Promise<boolean> {
+  // 1. Vercel Cron — always sends x-vercel-cron: 1 (set by Vercel infra, not spoofable externally)
+  if (req.headers.get("x-vercel-cron") === "1") return true;
+
+  // 2. CRON_SECRET bearer token (manual or CI triggers)
   const cronSecret = process.env.CRON_SECRET;
   const authHeader = req.headers.get("authorization");
-
-  // Vercel cron with CRON_SECRET configured
   if (cronSecret && authHeader === `Bearer ${cronSecret}`) return true;
 
-  // Vercel cron without CRON_SECRET — header x-vercel-cron is always sent by Vercel infra
-  if (!cronSecret && req.headers.get("x-vercel-cron") === "1") return true;
-
+  // 3. Admin session (manual trigger from the UI)
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return false;
