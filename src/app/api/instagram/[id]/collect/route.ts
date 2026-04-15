@@ -1,7 +1,7 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { NextRequest, NextResponse } from "next/server";
-import { upsertPosts as sharedUpsertPosts, mapPostType } from "@/lib/instagram/apify-collect";
+import { upsertPosts as sharedUpsertPosts, mapPostType, updateTotalViews } from "@/lib/instagram/apify-collect";
 
 const APIFY_PROFILE_ACTOR = "apify~instagram-scraper";
 const APIFY_REELS_ACTOR  = "apify~instagram-reel-scraper";
@@ -195,6 +195,9 @@ export async function GET(
     upsertErrors = result.errors;
     snapshotSaved = false;
   }
+
+  // Recalculate total_views from post snapshots and write it to the latest account snapshot
+  await updateTotalViews(adminClient, id);
 
   return NextResponse.json({
     runId,
